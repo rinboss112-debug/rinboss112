@@ -373,6 +373,30 @@ def _looks_blocked(page_text: str) -> bool:
     )
 
 
+def test_amazon_connection(zip_code: str) -> tuple[bool, str]:
+    """Check Amazon reachability and CAPTCHA status without scraping a niche."""
+    zip_code = _clean_text(zip_code)
+    if not zip_code:
+        return False, "ZIP Code không được để trống."
+    session = _build_session()
+    messages: list[str] = []
+    try:
+        zip_applied = _set_delivery_zip(session, zip_code, messages.append)
+        response = session.get(
+            f"{AMAZON_BASE_URL}/s?k=amazon",
+            timeout=DEFAULT_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        if _looks_blocked(response.text):
+            return False, "Amazon đang yêu cầu CAPTCHA hoặc chặn IP hiện tại."
+        location_note = "ZIP đã được xác nhận" if zip_applied else "ZIP chưa được xác nhận"
+        return True, f"Kết nối Amazon thành công; {location_note}."
+    except requests.RequestException as error:
+        return False, f"Không kết nối được Amazon: {error}"
+    finally:
+        session.close()
+
+
 def scrape_keyword(
     keyword: str,
     zip_code: str,

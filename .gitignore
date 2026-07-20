@@ -5,6 +5,9 @@ __pycache__/
 venv/
 .env
 .streamlit/secrets.toml
+drive_secrets.toml
+client_secret*.json
+token*.json
 
 # Hồ sơ trình duyệt có thể chứa cookie và dữ liệu đăng nhập.
 browser_profile/
