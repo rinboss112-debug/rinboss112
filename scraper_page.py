@@ -260,8 +260,16 @@ def _require_password() -> None:
         return
 
     with st.container(horizontal_alignment="center"):
+        st.badge(
+            "RinBoss Commerce",
+            icon=":material/storefront:",
+            color="orange",
+        )
         st.title("Amazon Product Scraper", text_alignment="center")
-        st.caption("Nhập mật khẩu để sử dụng ứng dụng.", text_alignment="center")
+        st.caption(
+            "Không gian quản lý dữ liệu sản phẩm dành cho đội ngũ bán hàng.",
+            text_alignment="center",
+        )
         password = st.text_input(
             "Mật khẩu",
             type="password",
@@ -319,9 +327,14 @@ def _require_access_code(
         st.session_state.pop("access_user_id", None)
         st.session_state.pop("access_user_name", None)
         with st.container(horizontal_alignment="center"):
+            st.badge(
+                "RinBoss Commerce",
+                icon=":material/storefront:",
+                color="orange",
+            )
             st.title("Amazon Product Scraper", text_alignment="center")
             st.caption(
-                "Nhập mã truy cập do admin cấp để sử dụng ứng dụng.",
+                "Đăng nhập để quản lý ngách và dữ liệu sản phẩm của bạn.",
                 text_alignment="center",
             )
             access_code = st.text_input(
@@ -933,6 +946,11 @@ if initial_snapshot["running"]:
     st.session_state["monitor_was_running"] = True
 
 with st.sidebar:
+    st.badge(
+        "RinBoss Commerce",
+        icon=":material/storefront:",
+        color="orange",
+    )
     st.header("Thiết lập phiên cào", anchor=False)
     if access_identity:
         with st.container(border=True):
@@ -1133,10 +1151,32 @@ with st.sidebar:
     st.caption("Mỗi lần chạy được lưu trong một thư mục riêng.")
 
 
-st.title("Amazon Product Scraper")
-st.caption(
-    "Quản lý nhiều ngách, đồng bộ Google Drive và giữ dữ liệu tách biệt theo từng phiên."
-)
+with st.container(border=True):
+    st.badge(
+        "RinBoss Commerce",
+        icon=":material/storefront:",
+        color="orange",
+    )
+    st.title("Amazon Product Scraper")
+    st.caption(
+        "Trung tâm tìm kiếm, chọn lọc và quản lý dữ liệu sản phẩm dành cho bán hàng."
+    )
+    with st.container(horizontal=True):
+        st.badge(
+            "Google Drive" if drive_ready else "Lưu trữ cục bộ",
+            icon=":material/cloud_done:" if drive_ready else ":material/hard_drive:",
+            color="green" if drive_ready else "gray",
+        )
+        st.badge(
+            "Lọc giao nhanh",
+            icon=":material/local_shipping:",
+            color="orange",
+        )
+        st.badge(
+            "Quản lý theo ngách",
+            icon=":material/category:",
+            color="blue",
+        )
 _render_public_catalog(catalog_store)
 
 if keywords and not initial_snapshot["running"]:

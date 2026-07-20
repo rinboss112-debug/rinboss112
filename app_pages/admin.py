@@ -42,9 +42,14 @@ def _require_admin() -> dict[str, Any]:
     st.session_state.setdefault("admin_authenticated", False)
     if not st.session_state.admin_authenticated:
         with st.container(horizontal_alignment="center"):
-            st.title("Quản trị truy cập", text_alignment="center")
+            st.badge(
+                "RinBoss Commerce",
+                icon=":material/storefront:",
+                color="orange",
+            )
+            st.title("Trung tâm quản trị", text_alignment="center")
             st.caption(
-                "Nhập mật khẩu quản trị. URL này không được hiển thị trong menu.",
+                "Quản lý thành viên, nội dung và dữ liệu bán hàng trong một nơi.",
                 text_alignment="center",
             )
             password = st.text_input(
@@ -149,12 +154,18 @@ except Exception as error:
     custom_content = {"categories": [], "pages": []}
     st.warning(f"Chưa tải được page tùy chỉnh: {error}")
 
+st.badge(
+    "RinBoss Commerce",
+    icon=":material/storefront:",
+    color="orange",
+)
 header = st.container(horizontal=True, vertical_alignment="center")
 with header:
-    st.title("Quản trị truy cập")
+    st.title("Trung tâm quản trị")
     if st.button("Đăng xuất", icon=":material/logout:", key="admin_logout"):
         st.session_state.admin_authenticated = False
         st.rerun()
+st.caption("Kiểm soát quyền truy cập, duyệt ngách và tổ chức page dữ liệu bán hàng.")
 
 if message := st.session_state.pop("admin_flash", ""):
     st.success(message)

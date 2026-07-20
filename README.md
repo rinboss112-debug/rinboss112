@@ -25,6 +25,7 @@ Web app Streamlit tiếng Việt để chạy tuần tự nhiều ngách Amazon,
 - Trang `/admin` ẩn để thêm/xóa/khóa người dùng, khóa khẩn cấp việc cào và duyệt ngách.
 - Mỗi ngách hoàn tất được đưa vào danh sách chờ duyệt; chỉ ngách admin công khai mới hiện trên trang chủ.
 - Admin có thể tạo category và page tùy chỉnh; page công khai tự xuất hiện trên menu trang web theo đúng category.
+- Giao diện RinBoss Commerce dùng bảng màu bán hàng cam đất, kem ấm, xanh navy và xanh lá; đồng bộ giữa trang cào, page dữ liệu và `/admin`.
 - Mỗi page có bảng sửa trực tiếp như Excel: sửa ô, thêm/xóa hàng, thêm/xóa/đổi tên cột và nhập CSV/XLSX.
 - Có thể gắn các ngách/file đã cào vào page bất kỳ để người dùng mở nhanh dữ liệu trên Google Drive.
 - Category, page và toàn bộ bảng tùy chỉnh được lưu trong `custom_pages.json` trên Google Drive.

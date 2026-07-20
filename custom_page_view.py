@@ -24,11 +24,23 @@ def render_custom_page(
     category_name: str,
     niche_catalog: Mapping[str, Any],
 ) -> None:
-    st.title(str(page.get("title", "Trang dữ liệu")))
-    if category_name:
-        st.badge(category_name, color="blue")
-    if description := str(page.get("description", "")).strip():
-        st.markdown(description)
+    with st.container(border=True):
+        with st.container(horizontal=True):
+            st.badge(
+                "RinBoss Commerce",
+                icon=":material/storefront:",
+                color="orange",
+            )
+            if category_name:
+                st.badge(
+                    category_name,
+                    icon=":material/category:",
+                    color="blue",
+                )
+        st.title(str(page.get("title", "Trang dữ liệu")))
+        if description := str(page.get("description", "")).strip():
+            st.markdown(description)
+        st.caption("Dữ liệu được quản lý và cập nhật bởi đội ngũ quản trị.")
 
     frame = frame_from_page(page)
     search = st.text_input(

@@ -57,14 +57,14 @@ def _page_renderer(
 
 
 st.set_page_config(
-    page_title="Amazon Product Scraper",
+    page_title="RinBoss Commerce",
     page_icon=":material/shopping_bag:",
     layout="wide",
 )
 
 scraper_page = st.Page(
     "scraper_page.py",
-    title="Amazon Product Scraper",
+    title="Cào sản phẩm",
     icon=":material/shopping_bag:",
     default=True,
 )
