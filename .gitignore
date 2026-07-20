@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.env
+.streamlit/secrets.toml
+
+# Hồ sơ trình duyệt có thể chứa cookie và dữ liệu đăng nhập.
+browser_profile/
+
+# Dữ liệu sinh trong lúc chạy.
+output/*
+!output/.gitkeep
+amazon_products.csv
+
+# File hệ điều hành và IDE.
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
