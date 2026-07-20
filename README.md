@@ -21,6 +21,9 @@ Web app Streamlit tiếng Việt để chạy tuần tự nhiều ngách Amazon,
 - Chạy lại riêng các ngách lỗi.
 - Tải CSV đang lọc, CSV gộp hoặc toàn bộ phiên dạng ZIP.
 - Mật khẩu bảo vệ app tùy chọn.
+- Trang `/admin` ẩn để thêm/xóa/khóa người dùng và khóa khẩn cấp việc cào.
+- Quota riêng theo mã truy cập: lượt/ngày, ngách/lượt, trang/ngách và sản phẩm/ngách.
+- Đồng bộ chính sách truy cập dạng băm lên Google Drive; không lưu mã người dùng dạng rõ.
 - Thông báo hoàn tất qua Telegram và email tùy chọn.
 - Kiểm tra kết nối Amazon và Google Drive ngay trên sidebar.
 - Nếu CSV bị Excel khóa, tự chuyển sang tên timestamp.
@@ -87,6 +90,33 @@ password = "MAT_KHAU_CUA_BAN"
 Sau khi app chạy lại, sidebar sẽ hiện **Google Drive đã cấu hình**. Nhấn **Kiểm tra Google Drive**; app tự tạo thư mục `Amazon Product Scraper` trong My Drive.
 
 Nếu Google báo `invalid_grant`, refresh token đã hết hiệu lực hoặc bị thu hồi; chạy lại `setup_google_drive.py` và cập nhật Secrets.
+
+## Thiết lập trang `/admin`
+
+Thêm phần sau vào Streamlit **App settings → Secrets**:
+
+```toml
+[admin]
+password = "MAT_KHAU_ADMIN_RAT_MANH"
+enable_access_control = true
+```
+
+Sau khi Save và reboot app, mở:
+
+```text
+https://TEN-APP-CUA-BAN.streamlit.app/admin
+```
+
+Đăng nhập bằng `admin.password`, sau đó:
+
+1. Thêm người dùng và tạo mã truy cập riêng.
+2. Đặt số lượt/người/ngày, số ngách/lượt, trang/ngách và sản phẩm/ngách.
+3. Bật **Cho phép người dùng bắt đầu cào**.
+4. Gửi riêng mã truy cập cho từng người.
+
+Admin có thể khóa/mở khóa, xóa người dùng, đặt lại lượt hôm nay hoặc đóng toàn bộ quyền bắt đầu phiên mới. Khi Google Drive đã cấu hình, chính sách nằm trong `access_control.json` trên Drive; mã truy cập chỉ được lưu dưới dạng băm có salt. Không chia sẻ mật khẩu admin.
+
+Nếu `enable_access_control = false` hoặc không khai báo, app tiếp tục dùng mật khẩu `[app]` cũ để tương thích.
 
 ## Secrets đầy đủ
 

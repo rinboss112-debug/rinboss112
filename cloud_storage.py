@@ -122,6 +122,28 @@ class GoogleDriveStorage:
         )
         return str(folder["id"])
 
+    def _find_file(self, name: str, parent_id: str) -> str:
+        response = (
+            self._get_service()
+            .files()
+            .list(
+                q=" and ".join(
+                    (
+                        f"name = '{self._escape_query(name)}'",
+                        f"'{parent_id}' in parents",
+                        "trashed = false",
+                    )
+                ),
+                spaces="drive",
+                fields="files(id,name,modifiedTime)",
+                orderBy="modifiedTime desc",
+                pageSize=10,
+            )
+            .execute(num_retries=3)
+        )
+        files = response.get("files", [])
+        return str(files[0]["id"]) if files else ""
+
     def ensure_root_folder(self) -> str:
         if self.root_folder_id:
             self._get_service().files().get(
@@ -150,6 +172,26 @@ class GoogleDriveStorage:
     def upsert_bytes(self, name: str, data: bytes, mime_type: str) -> str:
         if not self.run_folder_id:
             raise RuntimeError("Chưa khởi tạo thư mục phiên chạy trên Google Drive.")
+        existing_id = self._uploaded_file_ids.get(name)
+        result = self._upsert_bytes_in_folder(
+            self.run_folder_id,
+            name,
+            data,
+            mime_type,
+            existing_id=existing_id,
+        )
+        self._uploaded_file_ids[name] = str(result["id"])
+        return str(result.get("webViewLink", ""))
+
+    def _upsert_bytes_in_folder(
+        self,
+        folder_id: str,
+        name: str,
+        data: bytes,
+        mime_type: str,
+        *,
+        existing_id: str = "",
+    ) -> Mapping[str, Any]:
         try:
             from googleapiclient.http import MediaIoBaseUpload
         except ImportError as error:
@@ -161,7 +203,6 @@ class GoogleDriveStorage:
             io.BytesIO(data), mimetype=mime_type, resumable=len(data) > 5_000_000
         )
         service = self._get_service()
-        existing_id = self._uploaded_file_ids.get(name)
         if existing_id:
             result = (
                 service.files()
@@ -176,13 +217,45 @@ class GoogleDriveStorage:
             result = (
                 service.files()
                 .create(
-                    body={"name": name, "parents": [self.run_folder_id]},
+                    body={"name": name, "parents": [folder_id]},
                     media_body=media,
                     fields="id,name,webViewLink",
                 )
                 .execute(num_retries=3)
             )
-            self._uploaded_file_ids[name] = str(result["id"])
+        return result
+
+    def read_root_json(self, name: str) -> dict[str, Any] | None:
+        root_id = self.ensure_root_folder()
+        file_id = self._find_file(name, root_id)
+        if not file_id:
+            return None
+        raw = (
+            self._get_service()
+            .files()
+            .get_media(fileId=file_id)
+            .execute(num_retries=3)
+        )
+        if isinstance(raw, str):
+            raw = raw.encode("utf-8")
+        payload = json.loads(bytes(raw).decode("utf-8-sig"))
+        if not isinstance(payload, dict):
+            raise ValueError(f"File {name} trên Google Drive không phải JSON object.")
+        return payload
+
+    def upsert_root_json(self, name: str, payload: Mapping[str, Any]) -> str:
+        root_id = self.ensure_root_folder()
+        existing_id = self._find_file(name, root_id)
+        data = json.dumps(
+            payload, ensure_ascii=False, indent=2, default=str
+        ).encode("utf-8")
+        result = self._upsert_bytes_in_folder(
+            root_id,
+            name,
+            data,
+            "application/json",
+            existing_id=existing_id,
+        )
         return str(result.get("webViewLink", ""))
 
     def upload_path(self, path: Path, mime_type: str) -> str:
