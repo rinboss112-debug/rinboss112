@@ -619,7 +619,6 @@ def _render_table(frame: pd.DataFrame) -> None:
         "title",
         "price",
         "delivery_options",
-        "delivery_text",
         "rating",
         "review_count",
         "prime",
@@ -640,10 +639,7 @@ def _render_table(frame: pd.DataFrame) -> None:
             "title": st.column_config.TextColumn("Sản phẩm", width="large"),
             "price": st.column_config.NumberColumn("Giá", format="$%.2f"),
             "delivery_options": st.column_config.TextColumn(
-                "Tốc độ giao", width="medium"
-            ),
-            "delivery_text": st.column_config.TextColumn(
-                "Thông tin giao hàng", width="large"
+                "Thông tin giao hàng", width="medium"
             ),
             "rating": st.column_config.NumberColumn("Đánh giá", format="%.1f ⭐"),
             "review_count": st.column_config.NumberColumn("Lượt đánh giá", format="localized"),

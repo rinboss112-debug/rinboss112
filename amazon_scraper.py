@@ -45,7 +45,6 @@ class Product:
     fast_shipping: bool
     delivery_available: bool
     delivery_options: str
-    delivery_text: str
     image_url: str
     product_url: str
     sponsored: bool
@@ -327,28 +326,30 @@ def _original_image_url(value: str) -> str:
     )
 
 
-def _extract_delivery_options(delivery_text: str) -> list[str]:
-    """List normalized express delivery choices in their displayed order."""
+def _extract_delivery_options(delivery_text: str) -> str:
+    """Return one of the compact delivery values exposed in CSV and UI."""
     lowered = delivery_text.lower()
-    patterns = {
-        "Today": (r"\btoday\b", r"\bsame[ -]?day\b"),
-        "Overnight": (r"\bovernight\b",),
-        "Tomorrow": (
+    has_today = any(
+        re.search(expression, lowered)
+        for expression in (r"\btoday\b", r"\bsame[ -]?day\b")
+    )
+    has_tomorrow = any(
+        re.search(expression, lowered)
+        for expression in (
             r"\btomorrow\b",
             r"\bnext[ -]?day\b",
             r"\bone[ -]?day\b",
-        ),
-    }
-    found: list[tuple[int, str]] = []
-    for label, expressions in patterns.items():
-        positions = [
-            match.start()
-            for expression in expressions
-            if (match := re.search(expression, lowered)) is not None
-        ]
-        if positions:
-            found.append((min(positions), label))
-    return [label for _, label in sorted(found)]
+        )
+    )
+    if re.search(r"\bovernight\b", lowered):
+        return "Overnight"
+    if has_tomorrow and has_today:
+        return "Tomorrow, Today"
+    if has_today:
+        return "Today"
+    if has_tomorrow:
+        return "Tomorrow"
+    return ""
 
 
 def _extract_product(card: Tag, keyword: str) -> Product | None:
@@ -394,8 +395,7 @@ def _extract_product(card: Tag, keyword: str) -> Product | None:
         free_shipping=free_shipping,
         fast_shipping=fast_shipping,
         delivery_available=delivery_available,
-        delivery_options=", ".join(delivery_options),
-        delivery_text=delivery_text,
+        delivery_options=delivery_options,
         image_url=image_url,
         product_url=product_url,
         sponsored=sponsored,
