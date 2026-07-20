@@ -19,17 +19,20 @@ from access_control import AccessControlStore
 from amazon_scraper import (
     PRODUCT_COLUMNS,
     Product,
+    aggregate_csv_filename,
     scrape_keywords,
     slugify_filename,
     test_amazon_connection,
 )
 from cloud_storage import GoogleDriveConfig, GoogleDriveStorage
+from niche_catalog import NicheCatalogStore
 from notifications import send_completion_notifications
 
 
 APP_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = APP_DIR / "output"
 RUNS_DIR = OUTPUT_DIR / "runs"
+NICHE_CATALOG_PATH = OUTPUT_DIR / "niche_catalog.json"
 
 @dataclass(frozen=True, slots=True)
 class RunConfig:
@@ -402,6 +405,7 @@ def _results_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
         return frame
     frame["price"] = pd.to_numeric(frame["price"], errors="coerce")
     frame["delivery_options"] = frame["delivery_options"].fillna("").astype(str)
+    frame["delivery_detail"] = frame["delivery_detail"].fillna("").astype(str)
     for column in (
         "prime",
         "free_shipping",
@@ -446,6 +450,7 @@ def _manifest_payload(
         "total_products": snapshot["total_products"],
         "errors": snapshot["errors"],
         "niche_counts": snapshot["niche_counts"],
+        "aggregate_filename": aggregate_csv_filename(config.keywords[0]),
         "settings": config.public_settings(),
         "drive_folder_url": drive_folder_url,
     }
@@ -462,7 +467,8 @@ def _write_manifest(config: RunConfig, payload: Mapping[str, Any]) -> Path:
 
 
 def _build_archive(config: RunConfig) -> Path:
-    archive_path = config.output_dir / f"{config.run_id}.zip"
+    first_niche = slugify_filename(config.keywords[0])
+    archive_path = config.output_dir / f"{first_niche}_{config.run_id}.zip"
     with zipfile.ZipFile(
         archive_path, "w", compression=zipfile.ZIP_DEFLATED
     ) as archive:
@@ -507,6 +513,7 @@ def _sync_drive_result(
     keyword: str,
     niche_products: list[Product],
     all_products: list[Product],
+    aggregate_filename: str,
 ) -> None:
     niche_frame = _products_frame_from_models(niche_products)
     all_frame = _products_frame_from_models(all_products)
@@ -515,11 +522,12 @@ def _sync_drive_result(
         _csv_bytes(niche_frame),
         "text/csv",
     )
-    drive.upsert_bytes("all_products.csv", _csv_bytes(all_frame), "text/csv")
+    drive.upsert_bytes(aggregate_filename, _csv_bytes(all_frame), "text/csv")
 
 
 def _run_job(controller: RunController, config: RunConfig) -> None:
     drive: GoogleDriveStorage | None = None
+    aggregate_filename = aggregate_csv_filename(config.keywords[0])
     try:
         config.output_dir.mkdir(parents=True, exist_ok=True)
         if config.drive_config:
@@ -547,7 +555,13 @@ def _run_job(controller: RunController, config: RunConfig) -> None:
             if drive is None:
                 return
             try:
-                _sync_drive_result(drive, keyword, niche_products, all_products)
+                _sync_drive_result(
+                    drive,
+                    keyword,
+                    niche_products,
+                    all_products,
+                    aggregate_filename,
+                )
                 controller.add_log(f"Đã đồng bộ ngách '{keyword}' lên Google Drive.")
             except Exception as error:
                 controller.set_drive("Đồng bộ có lỗi", drive.run_folder_url)
@@ -593,6 +607,28 @@ def _run_job(controller: RunController, config: RunConfig) -> None:
                 controller.add_log(
                     f"CẢNH BÁO: Không tải được file tổng kết lên Drive: {error}"
                 )
+
+        try:
+            catalog_store = NicheCatalogStore(
+                NICHE_CATALOG_PATH,
+                config.drive_config,
+            )
+            catalog_store.register_run(
+                run_id=config.run_id,
+                keywords=config.keywords,
+                niche_counts=snapshot["niche_counts"],
+                failed_keywords=snapshot["failed_keywords"],
+                requested_by=config.requested_by,
+                drive_folder_url=drive_url,
+                aggregate_filename=aggregate_filename,
+            )
+            controller.add_log(
+                "Đã thêm các ngách hoàn tất vào danh sách chờ admin duyệt."
+            )
+        except Exception as error:
+            controller.add_log(
+                f"CẢNH BÁO: Chưa cập nhật được danh mục ngách để admin duyệt: {error}"
+            )
 
         notification_message = (
             f"Amazon Product Scraper hoàn tất phiên {config.run_id}.\n"
@@ -702,7 +738,7 @@ def _render_table(frame: pd.DataFrame) -> None:
         "keyword",
         "title",
         "price",
-        "delivery_options",
+        "delivery_detail",
         "rating",
         "review_count",
         "prime",
@@ -722,7 +758,7 @@ def _render_table(frame: pd.DataFrame) -> None:
             "keyword": st.column_config.TextColumn("Ngách", pinned=True),
             "title": st.column_config.TextColumn("Sản phẩm", width="large"),
             "price": st.column_config.NumberColumn("Giá", format="$%.2f"),
-            "delivery_options": st.column_config.TextColumn(
+            "delivery_detail": st.column_config.TextColumn(
                 "Thông tin giao hàng", width="medium"
             ),
             "rating": st.column_config.NumberColumn("Đánh giá", format="%.1f ⭐"),
@@ -739,7 +775,7 @@ def _render_table(frame: pd.DataFrame) -> None:
     )
 
 
-def _render_results_view(full_frame: pd.DataFrame) -> None:
+def _render_results_view(full_frame: pd.DataFrame, aggregate_filename: str) -> None:
     if full_frame.empty:
         st.caption("Chưa có sản phẩm để hiển thị.")
         return
@@ -759,7 +795,7 @@ def _render_results_view(full_frame: pd.DataFrame) -> None:
         st.download_button(
             "Tải toàn bộ kết quả gộp",
             data=_csv_bytes(full_frame),
-            file_name="all_products.csv",
+            file_name=aggregate_filename,
             mime="text/csv",
             type="primary",
             icon=":material/download:",
@@ -840,6 +876,36 @@ def _render_history_view(requested_by_id: str = "") -> None:
     )
 
 
+def _render_public_catalog(store: NicheCatalogStore) -> None:
+    try:
+        rows = NicheCatalogStore.public_rows(store.load())
+    except Exception as error:
+        st.warning(
+            f"Tạm thời chưa tải được danh sách ngách đã duyệt: {error}",
+            icon=":material/cloud_off:",
+        )
+        return
+
+    with st.container(border=True):
+        st.subheader("Các ngách đã được admin duyệt", anchor=False)
+        if not rows:
+            st.caption("Chưa có ngách nào được công khai.")
+            return
+        st.dataframe(
+            pd.DataFrame(rows),
+            hide_index=True,
+            column_order=["Ngách", "Sản phẩm", "Cập nhật", "Google Drive"],
+            column_config={
+                "Ngách": st.column_config.TextColumn("Ngách", pinned=True),
+                "Sản phẩm": st.column_config.NumberColumn("Sản phẩm"),
+                "Google Drive": st.column_config.LinkColumn(
+                    "Dữ liệu", display_text="Mở trên Drive"
+                ),
+            },
+            key="published_niches_table",
+        )
+
+
 drive_secrets = _secrets_section("google_drive")
 telegram_secrets = _secrets_section("telegram")
 email_secrets = _secrets_section("email")
@@ -854,6 +920,10 @@ access_store = AccessControlStore(
     drive_secrets if drive_ready else {},
 )
 access_identity = _require_access_code(access_store, enforce_access_control)
+catalog_store = NicheCatalogStore(
+    NICHE_CATALOG_PATH,
+    drive_secrets if drive_ready else {},
+)
 
 RUNS_DIR.mkdir(parents=True, exist_ok=True)
 st.session_state.setdefault("controller", RunController())
@@ -937,7 +1007,14 @@ with st.sidebar:
         key="max_products",
     )
     only_deliverable = st.checkbox(
-        "Chỉ lấy sản phẩm giao được tới ZIP", key="only_deliverable"
+        "Chỉ lấy sản phẩm giao được tới ZIP",
+        value=True,
+        disabled=True,
+        key="only_deliverable",
+    )
+    st.caption(
+        "Bắt buộc: chỉ giữ sản phẩm có FREE delivery/free shipping và có "
+        "Today, Tomorrow hoặc Overnight."
     )
     only_usd = st.checkbox("Chỉ lấy sản phẩm có giá USD", key="only_usd")
     file_mode = st.selectbox(
@@ -1060,6 +1137,7 @@ st.title("Amazon Product Scraper")
 st.caption(
     "Quản lý nhiều ngách, đồng bộ Google Drive và giữ dữ liệu tách biệt theo từng phiên."
 )
+_render_public_catalog(catalog_store)
 
 if keywords and not initial_snapshot["running"]:
     preview = st.expander(
@@ -1211,7 +1289,12 @@ def render_live_dashboard() -> None:
         key="dashboard_view",
     )
     if view == "Kết quả":
-        _render_results_view(full_frame)
+        aggregate_filename = (
+            aggregate_csv_filename(live_controller.config.keywords[0])
+            if live_controller.config and live_controller.config.keywords
+            else "amazon_all_products.csv"
+        )
+        _render_results_view(full_frame, aggregate_filename)
     elif view == "Thống kê":
         _render_statistics_view(full_frame)
     else:

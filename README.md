@@ -11,17 +11,19 @@ Web app Streamlit tiếng Việt để chạy tuần tự nhiều ngách Amazon,
 - Lọc theo giá, số trang, số sản phẩm, delivery và tiền tệ USD.
 - Worker nền, log/progress trực tiếp, ETA và dừng sau ngách hiện tại.
 - Mỗi phiên có `run_id` và thư mục riêng, không ghi chung giữa các phiên.
-- Lưu CSV riêng từng ngách và cập nhật `all_products.csv` ngay lập tức.
+- Lưu CSV riêng từng ngách và cập nhật file gộp theo ngách đầu tiên, ví dụ `snack_all_products.csv`, ngay lập tức.
 - Chuẩn hóa link sản phẩm thành `https://www.amazon.com/dp/ASIN` và bỏ tham số tracking.
 - Lấy link ảnh gốc, tự bỏ mã resize Amazon như `._AC_UL320_`.
-- Thông tin giao hàng chỉ xuất ra `Today`, `Tomorrow`, `Overnight` hoặc `Tomorrow, Today`.
+- Chỉ nhận sản phẩm vừa có `FREE delivery/free shipping` vừa có `Today`, `Tomorrow` hoặc `Overnight`.
+- Thông tin giao hàng được rút gọn thành nội dung hữu ích như `Overnight 4 AM - 8 AM`, không lấy quảng cáo Prime hay bộ đếm đặt hàng.
 - Đồng bộ CSV lên Google Drive ngay sau từng ngách.
 - Cuối phiên tạo `manifest.json` và ZIP, đồng bộ cả hai lên Drive.
 - Lịch sử phiên chạy, biểu đồ theo ngách/giá/vận chuyển.
 - Chạy lại riêng các ngách lỗi.
 - Tải CSV đang lọc, CSV gộp hoặc toàn bộ phiên dạng ZIP.
 - Mật khẩu bảo vệ app tùy chọn.
-- Trang `/admin` ẩn để thêm/xóa/khóa người dùng và khóa khẩn cấp việc cào.
+- Trang `/admin` ẩn để thêm/xóa/khóa người dùng, khóa khẩn cấp việc cào và duyệt ngách.
+- Mỗi ngách hoàn tất được đưa vào danh sách chờ duyệt; chỉ ngách admin công khai mới hiện trên trang chủ.
 - Quota riêng theo mã truy cập: lượt/ngày, ngách/lượt, trang/ngách và sản phẩm/ngách.
 - Đồng bộ chính sách truy cập dạng băm lên Google Drive; không lưu mã người dùng dạng rõ.
 - Thông báo hoàn tất qua Telegram và email tùy chọn.
@@ -114,7 +116,9 @@ https://TEN-APP-CUA-BAN.streamlit.app/admin
 3. Bật **Cho phép người dùng bắt đầu cào**.
 4. Gửi riêng mã truy cập cho từng người.
 
-Admin có thể khóa/mở khóa, xóa người dùng, đặt lại lượt hôm nay hoặc đóng toàn bộ quyền bắt đầu phiên mới. Khi Google Drive đã cấu hình, chính sách nằm trong `access_control.json` trên Drive; mã truy cập chỉ được lưu dưới dạng băm có salt. Không chia sẻ mật khẩu admin.
+Admin có thể khóa/mở khóa, xóa người dùng, đặt lại lượt hôm nay hoặc đóng toàn bộ quyền bắt đầu phiên mới. Admin cũng có thể công khai, ẩn hoặc xóa ngách trong mục **Duyệt ngách đã cào**. Ngách đã công khai xuất hiện trên trang chủ cho thành viên xem.
+
+Khi Google Drive đã cấu hình, chính sách nằm trong `access_control.json` và danh mục duyệt nằm trong `niche_catalog.json` trên Drive; mã truy cập chỉ được lưu dưới dạng băm có salt. Không chia sẻ mật khẩu admin.
 
 Nếu `enable_access_control = false` hoặc không khai báo, app tiếp tục dùng mật khẩu `[app]` cũ để tương thích.
 
@@ -153,10 +157,10 @@ output/
     └── run_20260720_153000_a1b2c3/
         ├── halloween_outdoor_decorations.csv
         ├── kitchen_organizer.csv
-        ├── all_products.csv
+        ├── halloween_outdoor_decorations_all_products.csv
         ├── errors.log
         ├── manifest.json
-        └── run_20260720_153000_a1b2c3.zip
+        └── halloween_outdoor_decorations_run_20260720_153000_a1b2c3.zip
 ```
 
 Streamlit Community Cloud không đảm bảo lưu bền file local. Khi Drive được cấu hình, mỗi phiên sẽ có một thư mục tương ứng trên Drive và CSV được tải lên ngay sau từng ngách.

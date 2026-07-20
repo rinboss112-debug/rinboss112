@@ -9,10 +9,12 @@ import pandas as pd
 import streamlit as st
 
 from access_control import AccessControlStore
+from niche_catalog import NicheCatalogStore
 
 
 APP_DIR = Path(__file__).resolve().parents[1]
 ACCESS_CONTROL_PATH = APP_DIR / "output" / "access_control.json"
+NICHE_CATALOG_PATH = APP_DIR / "output" / "niche_catalog.json"
 
 
 def _secrets_section(name: str) -> dict[str, Any]:
@@ -77,12 +79,19 @@ def _rerun_with_message(message: str) -> None:
 admin_config = _require_admin()
 drive_config = _drive_config()
 store = AccessControlStore(ACCESS_CONTROL_PATH, drive_config)
+catalog_store = NicheCatalogStore(NICHE_CATALOG_PATH, drive_config)
 
 try:
     policy = store.load()
 except Exception as error:
     st.error(f"Không tải được dữ liệu phân quyền: {error}")
     st.stop()
+
+try:
+    niche_catalog = catalog_store.load()
+except Exception as error:
+    niche_catalog = {"items": []}
+    st.warning(f"Chưa tải được danh mục ngách: {error}")
 
 header = st.container(horizontal=True, vertical_alignment="center")
 with header:
@@ -121,6 +130,85 @@ metrics[0].metric("Quyền cào", "Đang mở" if policy["scraper_enabled"] else
 metrics[1].metric("Người dùng", len(policy["users"]))
 metrics[2].metric("Lượt/ngày", policy["daily_run_limit"])
 metrics[3].metric("Ngách/lượt", policy["max_keywords_per_run"])
+
+with st.container(border=True):
+    st.subheader("Duyệt ngách đã cào", anchor=False)
+    catalog_rows = NicheCatalogStore.admin_rows(niche_catalog)
+    if not catalog_rows:
+        st.info(
+            "Chưa có ngách chờ duyệt. Mỗi ngách cào thành công sẽ tự xuất hiện tại đây."
+        )
+    else:
+        catalog_frame = pd.DataFrame(catalog_rows)
+        st.dataframe(
+            catalog_frame,
+            hide_index=True,
+            column_order=[
+                "Ngách",
+                "Trạng thái",
+                "Sản phẩm",
+                "Số lần cào",
+                "Lần cào gần nhất",
+                "Người cào",
+                "Google Drive",
+            ],
+            column_config={
+                "Ngách": st.column_config.TextColumn("Ngách", pinned=True),
+                "Sản phẩm": st.column_config.NumberColumn("Sản phẩm"),
+                "Số lần cào": st.column_config.NumberColumn("Số lần cào"),
+                "Google Drive": st.column_config.LinkColumn(
+                    "Google Drive", display_text="Mở dữ liệu"
+                ),
+            },
+            key="admin_niche_catalog_table",
+        )
+        catalog_by_label = {
+            f"{row['Ngách']} — {row['Trạng thái']}": row for row in catalog_rows
+        }
+        selected_catalog_label = st.selectbox(
+            "Chọn ngách để duyệt",
+            list(catalog_by_label),
+            key="admin_selected_niche",
+        )
+        selected_niche = catalog_by_label[selected_catalog_label]
+        is_published = selected_niche["Trạng thái"] == "Đã công khai"
+        catalog_actions = st.container(horizontal=True)
+        with catalog_actions:
+            if st.button(
+                "Ẩn khỏi trang chủ" if is_published else "Công khai lên trang chủ",
+                type="secondary" if is_published else "primary",
+                icon=":material/visibility_off:" if is_published else ":material/publish:",
+                key="admin_toggle_niche_publication",
+            ):
+                try:
+                    catalog_store.set_published(selected_niche["id"], not is_published)
+                    action = "ẩn" if is_published else "công khai"
+                    _rerun_with_message(
+                        f"Đã {action} ngách {selected_niche['Ngách']} trên trang chủ."
+                    )
+                except Exception as error:
+                    st.error(str(error))
+
+        confirm_delete_niche = st.checkbox(
+            f"Tôi xác nhận xóa ngách {selected_niche['Ngách']} khỏi danh mục",
+            key="admin_confirm_delete_niche",
+        )
+        if st.button(
+            "Xóa khỏi danh mục",
+            icon=":material/delete:",
+            disabled=not confirm_delete_niche,
+            key="admin_delete_niche",
+        ):
+            try:
+                catalog_store.delete_item(selected_niche["id"])
+                _rerun_with_message(
+                    f"Đã xóa ngách {selected_niche['Ngách']} khỏi danh mục."
+                )
+            except Exception as error:
+                st.error(str(error))
+
+    if catalog_store.last_warning:
+        st.warning(catalog_store.last_warning)
 
 with st.container(border=True):
     st.subheader("Cài đặt bảo vệ", anchor=False)

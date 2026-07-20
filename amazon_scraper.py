@@ -45,6 +45,7 @@ class Product:
     fast_shipping: bool
     delivery_available: bool
     delivery_options: str
+    delivery_detail: str
     image_url: str
     product_url: str
     sponsored: bool
@@ -91,6 +92,11 @@ def slugify_filename(value: str) -> str:
     if slug.upper() in WINDOWS_RESERVED_NAMES:
         slug = f"niche_{slug}"
     return slug
+
+
+def aggregate_csv_filename(first_keyword: str) -> str:
+    """Name the merged CSV after the first niche so runs are easy to recognize."""
+    return f"{slugify_filename(first_keyword)}_all_products.csv"
 
 
 def _timestamped_path(path: Path) -> Path:
@@ -329,18 +335,8 @@ def _original_image_url(value: str) -> str:
 def _extract_delivery_options(delivery_text: str) -> str:
     """Return one of the compact delivery values exposed in CSV and UI."""
     lowered = delivery_text.lower()
-    has_today = any(
-        re.search(expression, lowered)
-        for expression in (r"\btoday\b", r"\bsame[ -]?day\b")
-    )
-    has_tomorrow = any(
-        re.search(expression, lowered)
-        for expression in (
-            r"\btomorrow\b",
-            r"\bnext[ -]?day\b",
-            r"\bone[ -]?day\b",
-        )
-    )
+    has_today = re.search(r"\btoday\b", lowered) is not None
+    has_tomorrow = re.search(r"\btomorrow\b", lowered) is not None
     if re.search(r"\bovernight\b", lowered):
         return "Overnight"
     if has_tomorrow and has_today:
@@ -350,6 +346,36 @@ def _extract_delivery_options(delivery_text: str) -> str:
     if has_tomorrow:
         return "Tomorrow"
     return ""
+
+
+def _extract_delivery_detail(delivery_text: str) -> str:
+    """Keep only the useful Today/Tomorrow/Overnight phrase from Amazon text."""
+    if not delivery_text:
+        return ""
+
+    overnight = re.search(
+        r"\bovernight\b(?:\s+(?:by\s+)?\d{1,2}(?::\d{2})?\s*(?:AM|PM)"
+        r"\s*(?:-|–|—|to)\s*\d{1,2}(?::\d{2})?\s*(?:AM|PM))?",
+        delivery_text,
+        flags=re.IGNORECASE,
+    )
+    if overnight:
+        return _clean_text(overnight.group(0)).replace("–", "-").replace("—", "-")
+
+    matches = re.findall(
+        r"\b(?:today|tomorrow)\b(?:,\s*(?:[A-Za-z]+\s+)?\d{1,2})?",
+        delivery_text,
+        flags=re.IGNORECASE,
+    )
+    details: list[str] = []
+    seen: set[str] = set()
+    for match in matches:
+        clean = _clean_text(match)
+        key = clean.casefold()
+        if key not in seen:
+            seen.add(key)
+            details.append(clean[0].upper() + clean[1:])
+    return ", ".join(details)
 
 
 def _extract_product(card: Tag, keyword: str) -> Product | None:
@@ -372,6 +398,7 @@ def _extract_product(card: Tag, keyword: str) -> Product | None:
     delivery_text = _extract_delivery_text(card)
     delivery_lower = delivery_text.lower()
     delivery_options = _extract_delivery_options(delivery_text)
+    delivery_detail = _extract_delivery_detail(delivery_text)
     card_text = _clean_text(card.get_text(" ", strip=True))
     card_lower = card_text.lower()
 
@@ -396,6 +423,7 @@ def _extract_product(card: Tag, keyword: str) -> Product | None:
         fast_shipping=fast_shipping,
         delivery_available=delivery_available,
         delivery_options=delivery_options,
+        delivery_detail=delivery_detail,
         image_url=image_url,
         product_url=product_url,
         sponsored=sponsored,
@@ -501,6 +529,9 @@ def scrape_keyword(
                 if product is None or product.asin in seen_asins:
                     continue
                 seen_asins.add(product.asin)
+                # This app only publishes genuinely free and urgent delivery offers.
+                if not product.free_shipping or not product.delivery_options:
+                    continue
                 if minimum_price is not None and (
                     product.price is None or product.price < minimum_price
                 ):
@@ -570,7 +601,7 @@ def scrape_keywords(
     output_dir.mkdir(parents=True, exist_ok=True)
     total = len(clean_keywords)
     all_products: list[Product] = []
-    aggregate_path = output_dir / "all_products.csv"
+    aggregate_path = output_dir / aggregate_csv_filename(clean_keywords[0])
     if not overwrite_existing and aggregate_path.exists():
         aggregate_path = _timestamped_path(aggregate_path)
 
