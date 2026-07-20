@@ -24,6 +24,10 @@ Web app Streamlit tiếng Việt để chạy tuần tự nhiều ngách Amazon,
 - Mật khẩu bảo vệ app tùy chọn.
 - Trang `/admin` ẩn để thêm/xóa/khóa người dùng, khóa khẩn cấp việc cào và duyệt ngách.
 - Mỗi ngách hoàn tất được đưa vào danh sách chờ duyệt; chỉ ngách admin công khai mới hiện trên trang chủ.
+- Admin có thể tạo category và page tùy chỉnh; page công khai tự xuất hiện trên menu trang web theo đúng category.
+- Mỗi page có bảng sửa trực tiếp như Excel: sửa ô, thêm/xóa hàng, thêm/xóa/đổi tên cột và nhập CSV/XLSX.
+- Có thể gắn các ngách/file đã cào vào page bất kỳ để người dùng mở nhanh dữ liệu trên Google Drive.
+- Category, page và toàn bộ bảng tùy chỉnh được lưu trong `custom_pages.json` trên Google Drive.
 - Quota riêng theo mã truy cập: lượt/ngày, ngách/lượt, trang/ngách và sản phẩm/ngách.
 - Đồng bộ chính sách truy cập dạng băm lên Google Drive; không lưu mã người dùng dạng rõ.
 - Thông báo hoàn tất qua Telegram và email tùy chọn.
@@ -118,7 +122,18 @@ https://TEN-APP-CUA-BAN.streamlit.app/admin
 
 Admin có thể khóa/mở khóa, xóa người dùng, đặt lại lượt hôm nay hoặc đóng toàn bộ quyền bắt đầu phiên mới. Admin cũng có thể công khai, ẩn hoặc xóa ngách trong mục **Duyệt ngách đã cào**. Ngách đã công khai xuất hiện trên trang chủ cho thành viên xem. Nhấn **Quét các phiên cũ từ Google Drive** một lần để nhập cả những ngách đã cào trước khi tính năng danh mục được thêm vào.
 
-Khi Google Drive đã cấu hình, chính sách nằm trong `access_control.json` và danh mục duyệt nằm trong `niche_catalog.json` trên Drive; mã truy cập chỉ được lưu dưới dạng băm có salt. Không chia sẻ mật khẩu admin.
+Trong mục **Category, page và bảng dữ liệu**:
+
+1. Tạo category để nhóm nội dung, ví dụ `Snack`, `Nhà bếp`, `Thú cưng`.
+2. Tạo page và chọn category tương ứng.
+3. Nhập file CSV/XLSX hoặc sửa bảng trực tiếp; nút `+` trong bảng dùng để thêm hàng.
+4. Mở **Quản lý cột** để thêm, đổi tên hoặc xóa cột.
+5. Chọn các ngách đã cào để gắn link dữ liệu Google Drive vào page.
+6. Bật **Công khai page trên menu trang web** và nhấn **Lưu page và bảng dữ liệu**.
+
+Page công khai có URL riêng và tự xuất hiện trong menu phía trên, được nhóm theo category. Người xem có thể tìm trong bảng và tải CSV nhưng không thể chỉnh sửa; chỉ admin mới có quyền sửa.
+
+Khi Google Drive đã cấu hình, chính sách nằm trong `access_control.json`, danh mục duyệt nằm trong `niche_catalog.json`, còn page/category nằm trong `custom_pages.json` trên Drive; mã truy cập chỉ được lưu dưới dạng băm có salt. Không chia sẻ mật khẩu admin.
 
 Nếu `enable_access_control = false` hoặc không khai báo, app tiếp tục dùng mật khẩu `[app]` cũ để tương thích.
 
@@ -153,6 +168,9 @@ Với Gmail, dùng App Password thay vì mật khẩu tài khoản chính.
 
 ```text
 output/
+├── access_control.json
+├── niche_catalog.json
+├── custom_pages.json
 └── runs/
     └── run_20260720_153000_a1b2c3/
         ├── halloween_outdoor_decorations.csv

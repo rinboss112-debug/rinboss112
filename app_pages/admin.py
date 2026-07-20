@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hmac
+import io
 import secrets
 from pathlib import Path
 from typing import Any
@@ -9,12 +10,14 @@ import pandas as pd
 import streamlit as st
 
 from access_control import AccessControlStore
+from custom_pages import CustomPageStore, clean_dataframe, frame_from_page, records_from_frame
 from niche_catalog import NicheCatalogStore
 
 
 APP_DIR = Path(__file__).resolve().parents[1]
 ACCESS_CONTROL_PATH = APP_DIR / "output" / "access_control.json"
 NICHE_CATALOG_PATH = APP_DIR / "output" / "niche_catalog.json"
+CUSTOM_PAGES_PATH = APP_DIR / "output" / "custom_pages.json"
 
 
 def _secrets_section(name: str) -> dict[str, Any]:
@@ -73,13 +76,60 @@ def _drive_config() -> dict[str, Any]:
 
 def _rerun_with_message(message: str) -> None:
     st.session_state["admin_flash"] = message
+    st.cache_data.clear()
     st.rerun()
+
+
+def _read_uploaded_table(uploaded_file: Any) -> pd.DataFrame:
+    raw = uploaded_file.getvalue()
+    suffix = Path(uploaded_file.name).suffix.casefold()
+    if suffix == ".xlsx":
+        return clean_dataframe(pd.read_excel(io.BytesIO(raw)))
+    last_error: Exception | None = None
+    for encoding in ("utf-8-sig", "utf-8", "cp1258", "latin-1"):
+        try:
+            return clean_dataframe(
+                pd.read_csv(
+                    io.BytesIO(raw),
+                    encoding=encoding,
+                    sep=None,
+                    engine="python",
+                )
+            )
+        except (UnicodeDecodeError, pd.errors.ParserError) as error:
+            last_error = error
+    raise ValueError(f"Không đọc được file CSV: {last_error}")
+
+
+def _save_custom_page(
+    store: CustomPageStore,
+    page_id: str,
+    *,
+    title: str,
+    description: str,
+    category_id: str,
+    published: bool,
+    frame: pd.DataFrame,
+    niche_ids: list[str],
+) -> None:
+    columns, rows = records_from_frame(frame)
+    store.update_page(
+        page_id,
+        title=title,
+        description=description,
+        category_id=category_id,
+        published=published,
+        columns=columns,
+        rows=rows,
+        niche_ids=niche_ids,
+    )
 
 
 admin_config = _require_admin()
 drive_config = _drive_config()
 store = AccessControlStore(ACCESS_CONTROL_PATH, drive_config)
 catalog_store = NicheCatalogStore(NICHE_CATALOG_PATH, drive_config)
+custom_store = CustomPageStore(CUSTOM_PAGES_PATH, drive_config)
 
 try:
     policy = store.load()
@@ -92,6 +142,12 @@ try:
 except Exception as error:
     niche_catalog = {"items": []}
     st.warning(f"Chưa tải được danh mục ngách: {error}")
+
+try:
+    custom_content = custom_store.load()
+except Exception as error:
+    custom_content = {"categories": [], "pages": []}
+    st.warning(f"Chưa tải được page tùy chỉnh: {error}")
 
 header = st.container(horizontal=True, vertical_alignment="center")
 with header:
@@ -222,6 +278,424 @@ with st.container(border=True):
 
     if catalog_store.last_warning:
         st.warning(catalog_store.last_warning)
+
+with st.container(border=True):
+    st.subheader("Category, page và bảng dữ liệu", anchor=False)
+    st.caption(
+        "Tạo page theo category, nhập CSV/XLSX, sửa dữ liệu như Excel và gắn các "
+        "ngách đã cào. Chỉ page được công khai mới xuất hiện trên menu trang web."
+    )
+    overview = st.container(horizontal=True)
+    with overview:
+        st.metric("Category", len(custom_content.get("categories", [])), border=True)
+        st.metric("Page", len(custom_content.get("pages", [])), border=True)
+        st.metric(
+            "Đang công khai",
+            sum(
+                1
+                for page in custom_content.get("pages", [])
+                if page.get("published", False)
+            ),
+            border=True,
+        )
+
+    manager_view = st.segmented_control(
+        "Nội dung cần quản lý",
+        ["Page và bảng dữ liệu", "Category"],
+        default="Page và bảng dữ liệu",
+        key="admin_custom_content_view",
+    )
+
+    categories = custom_content.get("categories", [])
+    category_by_id = {str(item["id"]): item for item in categories}
+    category_options = [""] + list(category_by_id)
+
+    def category_label(category_id: str) -> str:
+        if not category_id:
+            return "Chưa phân loại"
+        return str(category_by_id.get(category_id, {}).get("name", "Không xác định"))
+
+    if manager_view == "Category":
+        with st.form("admin_create_category_form", clear_on_submit=True):
+            new_category_name = st.text_input(
+                "Tên category",
+                placeholder="Ví dụ: Snack, Nhà bếp, Thú cưng",
+            )
+            new_category_description = st.text_area(
+                "Mô tả category",
+                placeholder="Mô tả ngắn để dễ nhớ nội dung bên trong.",
+            )
+            create_category = st.form_submit_button(
+                "Tạo category",
+                type="primary",
+                icon=":material/create_new_folder:",
+            )
+        if create_category:
+            try:
+                created = custom_store.create_category(
+                    new_category_name, new_category_description
+                )
+                _rerun_with_message(f"Đã tạo category {created['name']}.")
+            except Exception as error:
+                st.error(str(error))
+
+        if not categories:
+            st.info("Chưa có category. Hãy tạo category đầu tiên ở phía trên.")
+        else:
+            selected_category_id = st.selectbox(
+                "Chọn category để sửa",
+                list(category_by_id),
+                format_func=category_label,
+                key="admin_selected_custom_category",
+            )
+            selected_category = category_by_id[selected_category_id]
+            category_revision = selected_category.get("updated_at", "")
+            with st.form(f"admin_edit_category_{selected_category_id}_{category_revision}"):
+                edited_category_name = st.text_input(
+                    "Tên category",
+                    value=selected_category["name"],
+                )
+                edited_category_description = st.text_area(
+                    "Mô tả category",
+                    value=selected_category.get("description", ""),
+                )
+                update_category = st.form_submit_button(
+                    "Lưu category",
+                    type="primary",
+                    icon=":material/save:",
+                )
+            if update_category:
+                try:
+                    custom_store.update_category(
+                        selected_category_id,
+                        edited_category_name,
+                        edited_category_description,
+                    )
+                    _rerun_with_message("Đã cập nhật category.")
+                except Exception as error:
+                    st.error(str(error))
+
+            pages_in_category = sum(
+                1
+                for page in custom_content.get("pages", [])
+                if page.get("category_id", "") == selected_category_id
+            )
+            st.caption(
+                f"Category này đang có {pages_in_category} page. Nếu xóa, các page "
+                "sẽ chuyển sang Chưa phân loại và không bị mất dữ liệu."
+            )
+            confirm_delete_category = st.checkbox(
+                f"Tôi xác nhận xóa category {selected_category['name']}",
+                key=f"admin_confirm_delete_category_{selected_category_id}",
+            )
+            if st.button(
+                "Xóa category",
+                icon=":material/delete:",
+                disabled=not confirm_delete_category,
+                key=f"admin_delete_category_{selected_category_id}",
+            ):
+                try:
+                    custom_store.delete_category(selected_category_id)
+                    _rerun_with_message("Đã xóa category; các page được giữ nguyên.")
+                except Exception as error:
+                    st.error(str(error))
+
+    else:
+        with st.form("admin_create_custom_page_form", clear_on_submit=True):
+            new_page_title = st.text_input(
+                "Tên page mới",
+                placeholder="Ví dụ: Snack bán chạy",
+            )
+            new_page_category = st.selectbox(
+                "Category",
+                category_options,
+                format_func=category_label,
+            )
+            new_page_description = st.text_area(
+                "Mô tả page",
+                placeholder="Nội dung giới thiệu hiển thị phía trên bảng.",
+            )
+            create_page = st.form_submit_button(
+                "Tạo page",
+                type="primary",
+                icon=":material/note_add:",
+            )
+        if create_page:
+            try:
+                created = custom_store.create_page(
+                    new_page_title,
+                    new_page_category,
+                    new_page_description,
+                )
+                st.session_state["admin_selected_custom_page"] = created["id"]
+                _rerun_with_message(f"Đã tạo page {created['title']}.")
+            except Exception as error:
+                st.error(str(error))
+
+        custom_pages = custom_content.get("pages", [])
+        if not custom_pages:
+            st.info("Chưa có page. Hãy tạo page đầu tiên ở phía trên.")
+        else:
+            page_by_id = {str(item["id"]): item for item in custom_pages}
+            selected_page_id = st.selectbox(
+                "Chọn page để chỉnh sửa",
+                list(page_by_id),
+                format_func=lambda page_id: str(page_by_id[page_id]["title"]),
+                key="admin_selected_custom_page",
+            )
+            selected_page = page_by_id[selected_page_id]
+            revision = int(selected_page.get("revision", 1))
+            key_prefix = f"custom_page_{selected_page_id}_{revision}"
+
+            st.subheader(selected_page["title"], anchor=False)
+            page_title = st.text_input(
+                "Tên page",
+                value=selected_page["title"],
+                key=f"{key_prefix}_title",
+            )
+            page_description = st.text_area(
+                "Mô tả page",
+                value=selected_page.get("description", ""),
+                key=f"{key_prefix}_description",
+            )
+            page_category = st.selectbox(
+                "Category của page",
+                category_options,
+                index=category_options.index(selected_page.get("category_id", ""))
+                if selected_page.get("category_id", "") in category_options
+                else 0,
+                format_func=category_label,
+                key=f"{key_prefix}_category",
+            )
+            page_published = st.toggle(
+                "Công khai page trên menu trang web",
+                value=bool(selected_page.get("published", False)),
+                key=f"{key_prefix}_published",
+            )
+
+            niche_items = niche_catalog.get("items", [])
+            niche_by_id = {str(item["id"]): item for item in niche_items}
+            attached_niches = st.multiselect(
+                "Gắn các file/ngách đã cào vào page",
+                list(niche_by_id),
+                default=[
+                    niche_id
+                    for niche_id in selected_page.get("niche_ids", [])
+                    if niche_id in niche_by_id
+                ],
+                format_func=lambda niche_id: str(
+                    niche_by_id[niche_id].get("keyword", "Không xác định")
+                ),
+                key=f"{key_prefix}_niches",
+                help="Các ngách được chọn sẽ hiện kèm link thư mục Google Drive trên page.",
+            )
+
+            uploaded_table = st.file_uploader(
+                "Nhập dữ liệu từ CSV hoặc Excel",
+                type=["csv", "xlsx"],
+                key=f"{key_prefix}_upload",
+                help="Khi nhập, bảng hiện tại sẽ được thay bằng nội dung của file.",
+            )
+            confirm_import = st.checkbox(
+                "Tôi xác nhận thay bảng hiện tại bằng file đã chọn",
+                key=f"{key_prefix}_confirm_import",
+                disabled=uploaded_table is None,
+            )
+            if st.button(
+                "Nhập file vào page",
+                icon=":material/upload_file:",
+                disabled=uploaded_table is None or not confirm_import,
+                key=f"{key_prefix}_import",
+            ):
+                try:
+                    imported_frame = _read_uploaded_table(uploaded_table)
+                    _save_custom_page(
+                        custom_store,
+                        selected_page_id,
+                        title=page_title,
+                        description=page_description,
+                        category_id=page_category,
+                        published=page_published,
+                        frame=imported_frame,
+                        niche_ids=attached_niches,
+                    )
+                    _rerun_with_message(
+                        f"Đã nhập {len(imported_frame)} hàng từ {uploaded_table.name}."
+                    )
+                except Exception as error:
+                    st.error(f"Không nhập được file: {error}")
+
+            editor_frame = frame_from_page(selected_page)
+            st.markdown("**Sửa trực tiếp bảng dữ liệu**")
+            st.caption(
+                "Nhấp đúp vào ô để sửa. Dùng nút + dưới bảng để thêm hàng và chọn "
+                "hàng rồi xóa trong thanh công cụ của bảng."
+            )
+            edited_frame = st.data_editor(
+                editor_frame,
+                num_rows="dynamic",
+                hide_index=True,
+                height=430,
+                key=f"{key_prefix}_editor",
+            )
+
+            with st.expander(
+                "Quản lý cột",
+                icon=":material/view_column:",
+                on_change="rerun",
+            ) as column_tools:
+                if column_tools.open:
+                    new_column_name = st.text_input(
+                        "Tên cột mới",
+                        placeholder="Ví dụ: Trạng thái",
+                        key=f"{key_prefix}_new_column",
+                    )
+                    if st.button(
+                        "Thêm cột",
+                        icon=":material/add_column_right:",
+                        key=f"{key_prefix}_add_column",
+                    ):
+                        clean_name = new_column_name.strip()
+                        if not clean_name:
+                            st.error("Vui lòng nhập tên cột.")
+                        elif clean_name.casefold() in {
+                            str(column).casefold() for column in edited_frame.columns
+                        }:
+                            st.error("Tên cột đã tồn tại.")
+                        else:
+                            edited_frame[clean_name] = ""
+                            try:
+                                _save_custom_page(
+                                    custom_store,
+                                    selected_page_id,
+                                    title=page_title,
+                                    description=page_description,
+                                    category_id=page_category,
+                                    published=page_published,
+                                    frame=edited_frame,
+                                    niche_ids=attached_niches,
+                                )
+                                _rerun_with_message(f"Đã thêm cột {clean_name}.")
+                            except Exception as error:
+                                st.error(str(error))
+
+                    if len(edited_frame.columns):
+                        selected_column = st.selectbox(
+                            "Cột cần đổi tên hoặc xóa",
+                            list(edited_frame.columns),
+                            key=f"{key_prefix}_selected_column",
+                        )
+                        renamed_column = st.text_input(
+                            "Tên mới",
+                            value=str(selected_column),
+                            key=f"{key_prefix}_renamed_column",
+                        )
+                        column_actions = st.container(horizontal=True)
+                        with column_actions:
+                            if st.button(
+                                "Đổi tên cột",
+                                icon=":material/edit:",
+                                key=f"{key_prefix}_rename_column",
+                            ):
+                                clean_name = renamed_column.strip()
+                                duplicate = any(
+                                    str(column).casefold() == clean_name.casefold()
+                                    and str(column) != str(selected_column)
+                                    for column in edited_frame.columns
+                                )
+                                if not clean_name:
+                                    st.error("Tên mới không được để trống.")
+                                elif duplicate:
+                                    st.error("Tên cột mới đã tồn tại.")
+                                else:
+                                    edited_frame = edited_frame.rename(
+                                        columns={selected_column: clean_name}
+                                    )
+                                    try:
+                                        _save_custom_page(
+                                            custom_store,
+                                            selected_page_id,
+                                            title=page_title,
+                                            description=page_description,
+                                            category_id=page_category,
+                                            published=page_published,
+                                            frame=edited_frame,
+                                            niche_ids=attached_niches,
+                                        )
+                                        _rerun_with_message("Đã đổi tên cột.")
+                                    except Exception as error:
+                                        st.error(str(error))
+
+                        confirm_delete_column = st.checkbox(
+                            f"Xác nhận xóa cột {selected_column} và toàn bộ dữ liệu của cột",
+                            key=f"{key_prefix}_confirm_delete_column",
+                        )
+                        if st.button(
+                            "Xóa cột",
+                            icon=":material/delete:",
+                            disabled=not confirm_delete_column
+                            or len(edited_frame.columns) <= 1,
+                            key=f"{key_prefix}_delete_column",
+                        ):
+                            edited_frame = edited_frame.drop(columns=[selected_column])
+                            try:
+                                _save_custom_page(
+                                    custom_store,
+                                    selected_page_id,
+                                    title=page_title,
+                                    description=page_description,
+                                    category_id=page_category,
+                                    published=page_published,
+                                    frame=edited_frame,
+                                    niche_ids=attached_niches,
+                                )
+                                _rerun_with_message("Đã xóa cột.")
+                            except Exception as error:
+                                st.error(str(error))
+
+            if st.button(
+                "Lưu page và bảng dữ liệu",
+                type="primary",
+                icon=":material/save:",
+                key=f"{key_prefix}_save_page",
+            ):
+                try:
+                    _save_custom_page(
+                        custom_store,
+                        selected_page_id,
+                        title=page_title,
+                        description=page_description,
+                        category_id=page_category,
+                        published=page_published,
+                        frame=edited_frame,
+                        niche_ids=attached_niches,
+                    )
+                    _rerun_with_message("Đã lưu page và bảng dữ liệu lên Google Drive.")
+                except Exception as error:
+                    st.error(str(error))
+
+            st.caption(
+                f"Đường dẫn sau khi công khai: /{selected_page.get('slug', '')}"
+            )
+            confirm_delete_page = st.checkbox(
+                f"Tôi xác nhận xóa vĩnh viễn page {selected_page['title']}",
+                key=f"{key_prefix}_confirm_delete_page",
+            )
+            if st.button(
+                "Xóa page",
+                icon=":material/delete_forever:",
+                disabled=not confirm_delete_page,
+                key=f"{key_prefix}_delete_page",
+            ):
+                try:
+                    custom_store.delete_page(selected_page_id)
+                    st.session_state.pop("admin_selected_custom_page", None)
+                    _rerun_with_message("Đã xóa page.")
+                except Exception as error:
+                    st.error(str(error))
+
+    if custom_store.last_warning:
+        st.warning(custom_store.last_warning)
 
 with st.container(border=True):
     st.subheader("Cài đặt bảo vệ", anchor=False)
