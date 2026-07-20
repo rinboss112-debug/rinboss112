@@ -322,6 +322,7 @@ def _results_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
     if frame.empty:
         return frame
     frame["price"] = pd.to_numeric(frame["price"], errors="coerce")
+    frame["delivery_options"] = frame["delivery_options"].fillna("").astype(str)
     for column in (
         "prime",
         "free_shipping",
@@ -575,7 +576,14 @@ def _filter_results(frame: pd.DataFrame) -> pd.DataFrame:
         )
         shipping_filters = st.pills(
             "Điều kiện vận chuyển",
-            ["Free shipping", "Fast shipping", "Delivery available"],
+            [
+                "Free shipping",
+                "Fast shipping",
+                "Delivery available",
+                "Today",
+                "Tomorrow",
+                "Overnight",
+            ],
             selection_mode="multi",
             key="result_shipping_filters",
         ) or []
@@ -587,13 +595,20 @@ def _filter_results(frame: pd.DataFrame) -> pd.DataFrame:
         filtered = filtered[filtered["price"].notna() & (filtered["price"] >= filter_minimum)]
     if filter_maximum > 0:
         filtered = filtered[filtered["price"].notna() & (filtered["price"] <= filter_maximum)]
-    mapping = {
+    boolean_mapping = {
         "Free shipping": "free_shipping",
         "Fast shipping": "fast_shipping",
         "Delivery available": "delivery_available",
     }
     for label in shipping_filters:
-        filtered = filtered[filtered[mapping[label]]]
+        if label in boolean_mapping:
+            filtered = filtered[filtered[boolean_mapping[label]]]
+        else:
+            filtered = filtered[
+                filtered["delivery_options"].str.contains(
+                    rf"(?:^|, ){label}(?:, |$)", regex=True, na=False
+                )
+            ]
     return filtered
 
 
@@ -603,6 +618,8 @@ def _render_table(frame: pd.DataFrame) -> None:
         "keyword",
         "title",
         "price",
+        "delivery_options",
+        "delivery_text",
         "rating",
         "review_count",
         "prime",
@@ -622,6 +639,12 @@ def _render_table(frame: pd.DataFrame) -> None:
             "keyword": st.column_config.TextColumn("Ngách", pinned=True),
             "title": st.column_config.TextColumn("Sản phẩm", width="large"),
             "price": st.column_config.NumberColumn("Giá", format="$%.2f"),
+            "delivery_options": st.column_config.TextColumn(
+                "Tốc độ giao", width="medium"
+            ),
+            "delivery_text": st.column_config.TextColumn(
+                "Thông tin giao hàng", width="large"
+            ),
             "rating": st.column_config.NumberColumn("Đánh giá", format="%.1f ⭐"),
             "review_count": st.column_config.NumberColumn("Lượt đánh giá", format="localized"),
             "prime": st.column_config.CheckboxColumn("Prime"),
@@ -690,13 +713,24 @@ def _render_statistics_view(frame: pd.DataFrame) -> None:
         else:
             st.bar_chart(average_prices, x="Ngách", y="Giá trung bình")
 
+    delivery_options = frame["delivery_options"].fillna("").astype(str)
     shipping = pd.DataFrame(
         {
-            "Điều kiện": ["Free shipping", "Fast shipping", "Giao được"],
+            "Điều kiện": [
+                "Free shipping",
+                "Fast shipping",
+                "Giao được",
+                "Today",
+                "Tomorrow",
+                "Overnight",
+            ],
             "Sản phẩm": [
                 int(frame["free_shipping"].sum()),
                 int(frame["fast_shipping"].sum()),
                 int(frame["delivery_available"].sum()),
+                int(delivery_options.str.contains(r"(?:^|, )Today(?:, |$)").sum()),
+                int(delivery_options.str.contains(r"(?:^|, )Tomorrow(?:, |$)").sum()),
+                int(delivery_options.str.contains(r"(?:^|, )Overnight(?:, |$)").sum()),
             ],
         }
     )

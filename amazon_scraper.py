@@ -12,7 +12,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
-from urllib.parse import quote_plus, urljoin
+from urllib.parse import quote, quote_plus, urljoin
 
 import pandas as pd
 import requests
@@ -44,6 +44,7 @@ class Product:
     free_shipping: bool
     fast_shipping: bool
     delivery_available: bool
+    delivery_options: str
     delivery_text: str
     image_url: str
     product_url: str
@@ -308,6 +309,48 @@ def _extract_delivery_text(card: Tag) -> str:
     return " | ".join(pieces)
 
 
+def _canonical_product_url(asin: str) -> str:
+    """Return a stable Amazon product URL without tracking parameters."""
+    return f"{AMAZON_BASE_URL}/dp/{quote(asin.strip(), safe='')}"
+
+
+def _original_image_url(value: str) -> str:
+    """Remove Amazon image-resize directives such as ._AC_UL320_."""
+    cleaned = _clean_text(value)
+    if not cleaned:
+        return ""
+    image_url = urljoin(AMAZON_BASE_URL, cleaned)
+    return re.sub(
+        r"\._[^/?]+_(?=\.[a-zA-Z0-9]+(?:[?#]|$))",
+        "",
+        image_url,
+    )
+
+
+def _extract_delivery_options(delivery_text: str) -> list[str]:
+    """List normalized express delivery choices in their displayed order."""
+    lowered = delivery_text.lower()
+    patterns = {
+        "Today": (r"\btoday\b", r"\bsame[ -]?day\b"),
+        "Overnight": (r"\bovernight\b",),
+        "Tomorrow": (
+            r"\btomorrow\b",
+            r"\bnext[ -]?day\b",
+            r"\bone[ -]?day\b",
+        ),
+    }
+    found: list[tuple[int, str]] = []
+    for label, expressions in patterns.items():
+        positions = [
+            match.start()
+            for expression in expressions
+            if (match := re.search(expression, lowered)) is not None
+        ]
+        if positions:
+            found.append((min(positions), label))
+    return [label for _, label in sorted(found)]
+
+
 def _extract_product(card: Tag, keyword: str) -> Product | None:
     asin = _clean_text(card.get("data-asin"))
     title = _select_text(card, "h2 span") or _select_text(card, "h2")
@@ -315,9 +358,9 @@ def _extract_product(card: Tag, keyword: str) -> Product | None:
     if not asin or not title or not link:
         return None
 
-    product_url = urljoin(AMAZON_BASE_URL, str(link.get("href", "")))
+    product_url = _canonical_product_url(asin)
     image = card.select_one("img.s-image")
-    image_url = _clean_text(image.get("src")) if image else ""
+    image_url = _original_image_url(str(image.get("src", ""))) if image else ""
     price, currency = _parse_price(card)
     rating_text = _select_text(card, "i.a-icon-star-small span.a-icon-alt")
     if not rating_text:
@@ -327,6 +370,7 @@ def _extract_product(card: Tag, keyword: str) -> Product | None:
     review_count = _parse_integer(review_text)
     delivery_text = _extract_delivery_text(card)
     delivery_lower = delivery_text.lower()
+    delivery_options = _extract_delivery_options(delivery_text)
     card_text = _clean_text(card.get_text(" ", strip=True))
     card_lower = card_text.lower()
 
@@ -334,10 +378,7 @@ def _extract_product(card: Tag, keyword: str) -> Product | None:
     has_unavailable_marker = any(marker in delivery_lower for marker in unavailable_markers)
     delivery_available = bool(delivery_text) and not has_unavailable_marker
     free_shipping = "free delivery" in delivery_lower or "free shipping" in delivery_lower
-    fast_shipping = any(
-        marker in delivery_lower
-        for marker in ("overnight", "tomorrow", "same-day", "same day", "one-day")
-    )
+    fast_shipping = bool(delivery_options)
     prime = card.select_one("i.a-icon-prime, [aria-label*='Prime']") is not None
     sponsored = "sponsored" in card_lower
 
@@ -353,6 +394,7 @@ def _extract_product(card: Tag, keyword: str) -> Product | None:
         free_shipping=free_shipping,
         fast_shipping=fast_shipping,
         delivery_available=delivery_available,
+        delivery_options=", ".join(delivery_options),
         delivery_text=delivery_text,
         image_url=image_url,
         product_url=product_url,

@@ -12,6 +12,9 @@ Web app Streamlit tiếng Việt để chạy tuần tự nhiều ngách Amazon,
 - Worker nền, log/progress trực tiếp, ETA và dừng sau ngách hiện tại.
 - Mỗi phiên có `run_id` và thư mục riêng, không ghi chung giữa các phiên.
 - Lưu CSV riêng từng ngách và cập nhật `all_products.csv` ngay lập tức.
+- Chuẩn hóa link sản phẩm thành `https://www.amazon.com/dp/ASIN` và bỏ tham số tracking.
+- Lấy link ảnh gốc, tự bỏ mã resize Amazon như `._AC_UL320_`.
+- Liệt kê và lọc riêng tốc độ giao hàng `Today`, `Tomorrow`, `Overnight`.
 - Đồng bộ CSV lên Google Drive ngay sau từng ngách.
 - Cuối phiên tạo `manifest.json` và ZIP, đồng bộ cả hai lên Drive.
 - Lịch sử phiên chạy, biểu đồ theo ngách/giá/vận chuyển.
