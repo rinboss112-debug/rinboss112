@@ -258,6 +258,61 @@ class GoogleDriveStorage:
         )
         return str(result.get("webViewLink", ""))
 
+    def list_run_manifests(self) -> list[dict[str, Any]]:
+        """Read manifests from all run folders created inside the app root."""
+        root_id = self.ensure_root_folder()
+        folders: list[dict[str, Any]] = []
+        page_token: str | None = None
+        while True:
+            response = (
+                self._get_service()
+                .files()
+                .list(
+                    q=" and ".join(
+                        (
+                            f"'{root_id}' in parents",
+                            f"mimeType = '{DRIVE_FOLDER_MIME}'",
+                            "trashed = false",
+                        )
+                    ),
+                    spaces="drive",
+                    fields="nextPageToken,files(id,name,createdTime)",
+                    orderBy="createdTime asc",
+                    pageSize=1000,
+                    pageToken=page_token,
+                )
+                .execute(num_retries=3)
+            )
+            folders.extend(response.get("files", []))
+            page_token = response.get("nextPageToken")
+            if not page_token:
+                break
+        records: list[dict[str, Any]] = []
+        for folder in folders:
+            folder_id = str(folder.get("id", ""))
+            if not folder_id:
+                continue
+            manifest_id = self._find_file("manifest.json", folder_id)
+            if not manifest_id:
+                continue
+            raw = (
+                self._get_service()
+                .files()
+                .get_media(fileId=manifest_id)
+                .execute(num_retries=3)
+            )
+            if isinstance(raw, str):
+                raw = raw.encode("utf-8")
+            payload = json.loads(bytes(raw).decode("utf-8-sig"))
+            if isinstance(payload, dict):
+                records.append(
+                    {
+                        "folder_url": f"https://drive.google.com/drive/folders/{folder_id}",
+                        "manifest": payload,
+                    }
+                )
+        return records
+
     def upload_path(self, path: Path, mime_type: str) -> str:
         return self.upsert_bytes(path.name, path.read_bytes(), mime_type)
 

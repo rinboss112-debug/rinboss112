@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping
 from zoneinfo import ZoneInfo
 
-from amazon_scraper import slugify_filename
+from amazon_scraper import aggregate_csv_filename, slugify_filename
 from cloud_storage import GoogleDriveConfig, GoogleDriveStorage
 
 
@@ -34,14 +34,26 @@ def _normalize_catalog(payload: Mapping[str, Any]) -> dict[str, Any]:
         keyword = str(raw.get("keyword", "")).strip()
         if not keyword:
             continue
+        last_run_id = str(raw.get("last_run_id", "")).strip()
+        raw_run_ids = raw.get("run_ids", [])
+        run_ids = list(
+            dict.fromkeys(
+                str(value).strip()
+                for value in raw_run_ids
+                if str(value).strip()
+            )
+        ) if isinstance(raw_run_ids, list) else []
+        if last_run_id and last_run_id not in run_ids:
+            run_ids.append(last_run_id)
         items.append(
             {
                 "id": str(raw.get("id", "")).strip() or uuid.uuid4().hex,
                 "keyword": keyword,
                 "published": bool(raw.get("published", False)),
                 "product_count": max(int(raw.get("product_count", 0)), 0),
-                "run_count": max(int(raw.get("run_count", 1)), 1),
-                "last_run_id": str(raw.get("last_run_id", "")).strip(),
+                "run_count": max(int(raw.get("run_count", 1)), len(run_ids), 1),
+                "run_ids": run_ids,
+                "last_run_id": last_run_id,
                 "last_scraped_at": str(raw.get("last_scraped_at", "")).strip(),
                 "requested_by": str(raw.get("requested_by", "")).strip(),
                 "drive_folder_url": str(raw.get("drive_folder_url", "")).strip(),
@@ -136,36 +148,76 @@ class NicheCatalogStore:
         requested_by: str,
         drive_folder_url: str,
         aggregate_filename: str,
+        scraped_at: str = "",
     ) -> None:
-        failed = {value.casefold() for value in failed_keywords}
         with _CATALOG_LOCK:
             catalog = self.load()
-            by_keyword = {
-                item["keyword"].casefold(): item for item in catalog["items"]
-            }
-            scraped_at = _now_text()
-            for keyword in keywords:
-                clean_keyword = keyword.strip()
-                key = clean_keyword.casefold()
-                if not clean_keyword or key in failed:
-                    continue
-                item = by_keyword.get(key)
-                if item is None:
-                    item = {
-                        "id": uuid.uuid4().hex,
-                        "keyword": clean_keyword,
-                        "published": False,
-                        "product_count": 0,
-                        "run_count": 0,
-                        "created_at": scraped_at,
-                    }
-                    catalog["items"].append(item)
-                    by_keyword[key] = item
+            self._register_run_into(
+                catalog,
+                run_id=run_id,
+                keywords=keywords,
+                niche_counts=niche_counts,
+                failed_keywords=failed_keywords,
+                requested_by=requested_by,
+                drive_folder_url=drive_folder_url,
+                aggregate_filename=aggregate_filename,
+                scraped_at=scraped_at or _now_text(),
+            )
+            self.save(catalog)
+
+    @staticmethod
+    def _register_run_into(
+        catalog: dict[str, Any],
+        *,
+        run_id: str,
+        keywords: list[str],
+        niche_counts: Mapping[str, int],
+        failed_keywords: list[str],
+        requested_by: str,
+        drive_folder_url: str,
+        aggregate_filename: str,
+        scraped_at: str,
+    ) -> int:
+        failed = {value.casefold() for value in failed_keywords}
+        by_keyword = {
+            item["keyword"].casefold(): item for item in catalog["items"]
+        }
+        added_niches = 0
+        for keyword in keywords:
+            clean_keyword = str(keyword).strip()
+            key = clean_keyword.casefold()
+            if not clean_keyword or key in failed:
+                continue
+            item = by_keyword.get(key)
+            if item is None:
+                item = {
+                    "id": uuid.uuid4().hex,
+                    "keyword": clean_keyword,
+                    "published": False,
+                    "product_count": 0,
+                    "run_count": 0,
+                    "run_ids": [],
+                    "created_at": scraped_at,
+                }
+                catalog["items"].append(item)
+                by_keyword[key] = item
+                added_niches += 1
+
+            run_ids = item.setdefault("run_ids", [])
+            is_new_run = bool(run_id) and run_id not in run_ids
+            if is_new_run:
+                run_ids.append(run_id)
+                item["run_count"] = max(
+                    int(item.get("run_count", 0)) + 1,
+                    len(run_ids),
+                )
+            if not item.get("last_scraped_at") or scraped_at >= str(
+                item.get("last_scraped_at", "")
+            ):
                 item.update(
                     {
                         "keyword": clean_keyword,
                         "product_count": max(int(niche_counts.get(clean_keyword, 0)), 0),
-                        "run_count": int(item.get("run_count", 0)) + 1,
                         "last_run_id": run_id,
                         "last_scraped_at": scraped_at,
                         "requested_by": requested_by,
@@ -174,7 +226,55 @@ class NicheCatalogStore:
                         "aggregate_filename": aggregate_filename,
                     }
                 )
+        return added_niches
+
+    def import_drive_history(self) -> tuple[int, int]:
+        """Import old Drive run manifests without duplicating already-known runs."""
+        if not self.uses_google_drive:
+            raise RuntimeError("Google Drive chưa được cấu hình.")
+        records = self._drive().list_run_manifests()
+        with _CATALOG_LOCK:
+            catalog = self.load()
+            added_niches = 0
+            for record in records:
+                manifest = record.get("manifest", {})
+                if not isinstance(manifest, Mapping):
+                    continue
+                keywords = [
+                    str(value).strip()
+                    for value in manifest.get("keywords", [])
+                    if str(value).strip()
+                ]
+                if not keywords:
+                    continue
+                settings = manifest.get("settings", {})
+                settings = settings if isinstance(settings, Mapping) else {}
+                aggregate_name = str(manifest.get("aggregate_filename", "")).strip()
+                added_niches += self._register_run_into(
+                    catalog,
+                    run_id=str(manifest.get("run_id", "")).strip(),
+                    keywords=keywords,
+                    niche_counts=(
+                        manifest.get("niche_counts", {})
+                        if isinstance(manifest.get("niche_counts", {}), Mapping)
+                        else {}
+                    ),
+                    failed_keywords=[
+                        str(value) for value in manifest.get("failed_keywords", [])
+                    ],
+                    requested_by=str(settings.get("requested_by", "")).strip(),
+                    drive_folder_url=str(record.get("folder_url", "")).strip(),
+                    aggregate_filename=(
+                        aggregate_name or aggregate_csv_filename(keywords[0])
+                    ),
+                    scraped_at=str(
+                        manifest.get("finished_at")
+                        or manifest.get("started_at")
+                        or _now_text()
+                    ),
+                )
             self.save(catalog)
+        return len(records), added_niches
 
     def set_published(self, item_id: str, published: bool) -> None:
         with _CATALOG_LOCK:

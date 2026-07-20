@@ -116,7 +116,7 @@ https://TEN-APP-CUA-BAN.streamlit.app/admin
 3. Bật **Cho phép người dùng bắt đầu cào**.
 4. Gửi riêng mã truy cập cho từng người.
 
-Admin có thể khóa/mở khóa, xóa người dùng, đặt lại lượt hôm nay hoặc đóng toàn bộ quyền bắt đầu phiên mới. Admin cũng có thể công khai, ẩn hoặc xóa ngách trong mục **Duyệt ngách đã cào**. Ngách đã công khai xuất hiện trên trang chủ cho thành viên xem.
+Admin có thể khóa/mở khóa, xóa người dùng, đặt lại lượt hôm nay hoặc đóng toàn bộ quyền bắt đầu phiên mới. Admin cũng có thể công khai, ẩn hoặc xóa ngách trong mục **Duyệt ngách đã cào**. Ngách đã công khai xuất hiện trên trang chủ cho thành viên xem. Nhấn **Quét các phiên cũ từ Google Drive** một lần để nhập cả những ngách đã cào trước khi tính năng danh mục được thêm vào.
 
 Khi Google Drive đã cấu hình, chính sách nằm trong `access_control.json` và danh mục duyệt nằm trong `niche_catalog.json` trên Drive; mã truy cập chỉ được lưu dưới dạng băm có salt. Không chia sẻ mật khẩu admin.
 

@@ -133,6 +133,19 @@ metrics[3].metric("Ngách/lượt", policy["max_keywords_per_run"])
 
 with st.container(border=True):
     st.subheader("Duyệt ngách đã cào", anchor=False)
+    if drive_config and st.button(
+        "Quét các phiên cũ từ Google Drive",
+        icon=":material/history:",
+        key="admin_import_drive_history",
+    ):
+        try:
+            with st.spinner("Đang đọc manifest của các phiên cũ trên Drive..."):
+                scanned_runs, added_niches = catalog_store.import_drive_history()
+            _rerun_with_message(
+                f"Đã quét {scanned_runs} phiên trên Drive và thêm {added_niches} ngách cũ."
+            )
+        except Exception as error:
+            st.error(f"Không nhập được lịch sử Drive: {error}")
     catalog_rows = NicheCatalogStore.admin_rows(niche_catalog)
     if not catalog_rows:
         st.info(
