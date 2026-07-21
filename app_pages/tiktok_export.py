@@ -199,7 +199,9 @@ with st.container(border=True):
             key="tiktok_price_divisor",
         )
     st.code(
-        "Giá bán TikTok = (Giá gốc × 2 + 12) ÷ 0.8",
+        "Giá bán TikTok = "
+        f"(Giá gốc × {float(multiplier):g} + {float(fixed_cost):g}) "
+        f"÷ {float(divisor):g}",
         language=None,
     )
 
