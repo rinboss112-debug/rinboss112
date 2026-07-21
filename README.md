@@ -35,6 +35,10 @@ Web app Streamlit tiếng Việt để chạy tuần tự nhiều ngách Amazon,
 - Thông báo hoàn tất qua Telegram và email tùy chọn.
 - Kiểm tra kết nối Amazon và Google Drive ngay trên sidebar.
 - Nếu CSV bị Excel khóa, tự chuyển sang tên timestamp.
+- Trang /tiktok-shop-us dành cho admin để chuẩn bị sản phẩm và xuất Excel TikTok Shop US.
+- Tự tính giá bán theo công thức (giá gốc × 2 + 12) ÷ 0.8, đồng thời cho phép sửa giá cuối cùng.
+- Có bảng kiểm tra SKU, tên, mô tả, brand, ảnh, tồn kho, cân nặng, kích thước và GTIN/UPC trước khi xuất.
+- Hỗ trợ tải template XLSX chính thức của từng category TikTok, tự gợi ý ánh xạ cột và điền dữ liệu mà không thêm hoặc xóa cột của template.
 
 ## Cài đặt local
 
@@ -139,6 +143,23 @@ Khi Google Drive đã cấu hình, chính sách nằm trong `access_control.json
 
 Nếu `enable_access_control = false` hoặc không khai báo, app tiếp tục dùng mật khẩu `[app]` cũ để tương thích.
 
+## Xuất Excel cho TikTok Shop US
+
+Mở đường dẫn /tiktok-shop-us trên app và đăng nhập bằng mật khẩu admin.
+
+1. Tải CSV/XLSX kết quả scraper hoặc dùng kết quả của phiên cào đang mở.
+2. Bổ sung mô tả, brand, tồn kho, thông tin đóng gói, GTIN/UPC và biến thể.
+3. Kiểm tra giá tính tự động theo công thức (giá gốc × 2 + 12) ÷ 0.8.
+4. Tải bảng chuẩn bị nội bộ để kiểm tra.
+5. Trong TikTok Seller Center, chọn đúng category và tải template Excel chính thức.
+6. Upload template đó vào app, kiểm tra sheet, dòng tiêu đề và ánh xạ cột.
+7. Tạo rồi tải file TikTok đã điền.
+
+Template TikTok thay đổi theo category nên app không tự tạo một template chung để
+upload thẳng. Không dùng Amazon để giao trực tiếp đơn TikTok, không dùng hình ảnh
+hoặc thương hiệu khi chưa có quyền, và không chọn No brand cho sản phẩm rõ ràng
+có thương hiệu.
+
 ## Secrets đầy đủ
 
 File mẫu nằm tại `.streamlit/secrets.example.toml`. Chỉ sao chép những phần bạn cần. Không commit `.streamlit/secrets.toml`, `drive_secrets.toml`, OAuth JSON, refresh token, bot token hoặc mật khẩu email.
@@ -196,6 +217,7 @@ python amazon_scraper.py --niches niches.txt --zip-code 92704 --max-pages 2 --ma
 ```text
 main → bản ổn định đang chạy thật
 dev  → bản nâng cấp để kiểm thử
+feature/tiktok-shop-us-export → bản thử xuất Excel TikTok Shop US
 ```
 
 Deploy app thử nghiệm từ branch `dev`. Chỉ merge sang `main` sau khi kiểm tra Amazon, Drive, ZIP và thông báo.

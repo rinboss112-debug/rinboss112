@@ -68,6 +68,12 @@ scraper_page = st.Page(
     icon=":material/shopping_bag:",
     default=True,
 )
+tiktok_export_page = st.Page(
+    "app_pages/tiktok_export.py",
+    title="Xuất TikTok",
+    icon=":material/table_view:",
+    url_path="tiktok-shop-us",
+)
 admin_page = st.Page(
     "app_pages/admin.py",
     title="Quản trị",
@@ -92,7 +98,7 @@ category_names = {
 published_pages = [
     page for page in content.get("pages", []) if bool(page.get("published", False))
 ]
-navigation_pages: dict[str, list[Any]] = {"": [scraper_page]}
+navigation_pages: dict[str, list[Any]] = {"": [scraper_page, tiktok_export_page]}
 for category in content.get("categories", []):
     category_id = str(category.get("id", ""))
     category_pages = [
@@ -128,6 +134,6 @@ if uncategorized:
 navigation_pages[""].append(admin_page)
 navigation = st.navigation(
     navigation_pages,
-    position="top" if published_pages else "hidden",
+    position="top",
 )
 navigation.run()
