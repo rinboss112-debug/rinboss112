@@ -4,31 +4,10 @@ import unittest
 
 from bs4 import BeautifulSoup
 
-from amazon_scraper import _extract_product, _title_contains_amazon
+from amazon_scraper import _extract_product
 
 
-class AmazonTitleFilterTests(unittest.TestCase):
-    def test_rejects_amazon_in_any_common_form(self) -> None:
-        rejected = (
-            "Amazon Basics Storage Box",
-            "amazon.com Gift Card",
-            "AMAZON Fire TV Stick",
-            "AmazonBasics Cable",
-        )
-        for title in rejected:
-            with self.subTest(title=title):
-                self.assertTrue(_title_contains_amazon(title))
-
-    def test_keeps_titles_without_amazon(self) -> None:
-        accepted = (
-            "Healthy Snack Variety Pack",
-            "Kitchen Drawer Organizer",
-            "Pet Grooming Brush",
-        )
-        for title in accepted:
-            with self.subTest(title=title):
-                self.assertFalse(_title_contains_amazon(title))
-
+class DeliveryParsingTests(unittest.TestCase):
     def test_delivery_fallback_handles_new_unknown_html_class(self) -> None:
         html = """
         <div data-asin="B012345678">

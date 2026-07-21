@@ -262,12 +262,6 @@ def _clean_text(value: str | None) -> str:
     return re.sub(r"\s+", " ", value or "").strip()
 
 
-def _title_contains_amazon(value: str) -> bool:
-    """Reject Amazon-branded titles, including Amazon.com and AmazonBasics."""
-    normalized = unicodedata.normalize("NFKC", value).casefold()
-    return "amazon" in normalized
-
-
 def _select_text(node: Tag, selector: str) -> str:
     selected = node.select_one(selector)
     return _clean_text(selected.get_text(" ", strip=True) if selected else "")
@@ -548,7 +542,6 @@ def scrape_keyword(
             rejected = {
                 "không đọc được": 0,
                 "trùng ASIN": 0,
-                "chứa Amazon": 0,
                 "thiếu FREE": 0,
                 "thiếu Today/Tomorrow/Overnight": 0,
                 "ngoài khoảng giá": 0,
@@ -564,13 +557,6 @@ def scrape_keyword(
                     rejected["trùng ASIN"] += 1
                     continue
                 seen_asins.add(product.asin)
-                if _title_contains_amazon(product.title):
-                    rejected["chứa Amazon"] += 1
-                    _log(
-                        log_callback,
-                        f"Bỏ ASIN {product.asin}: tiêu đề chứa từ Amazon.",
-                    )
-                    continue
                 # This app only publishes genuinely free and urgent delivery offers.
                 if not product.free_shipping:
                     rejected["thiếu FREE"] += 1
