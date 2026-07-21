@@ -14,6 +14,7 @@ Web app Streamlit tiếng Việt để chạy tuần tự nhiều ngách Amazon,
 - Lưu CSV riêng từng ngách và cập nhật file gộp theo ngách đầu tiên, ví dụ `snack_all_products.csv`, ngay lập tức.
 - Chuẩn hóa link sản phẩm thành `https://www.amazon.com/dp/ASIN` và bỏ tham số tracking.
 - Lấy link ảnh gốc, tự bỏ mã resize Amazon như `._AC_UL320_`.
+- Tự loại mọi sản phẩm có tiêu đề chứa `Amazon`, không phân biệt chữ hoa/thường.
 - Chỉ nhận sản phẩm vừa có `FREE delivery/free shipping` vừa có `Today`, `Tomorrow` hoặc `Overnight`.
 - Thông tin giao hàng được rút gọn thành nội dung hữu ích như `Overnight 4 AM - 8 AM`, không lấy quảng cáo Prime hay bộ đếm đặt hàng.
 - Đồng bộ CSV lên Google Drive ngay sau từng ngách.
