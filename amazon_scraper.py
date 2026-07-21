@@ -320,6 +320,16 @@ def _extract_delivery_text(card: Tag) -> str:
     return " | ".join(pieces)
 
 
+def _delivery_fallback_from_card_text(card_text: str) -> str:
+    """Recover delivery copy when Amazon changes the delivery element classes."""
+    match = re.search(
+        r"\bfree\s+(?:delivery|shipping)\b.{0,240}",
+        card_text,
+        flags=re.IGNORECASE,
+    )
+    return _clean_text(match.group(0)) if match else ""
+
+
 def _canonical_product_url(asin: str) -> str:
     """Return a stable Amazon product URL without tracking parameters."""
     return f"{AMAZON_BASE_URL}/dp/{quote(asin.strip(), safe='')}"
@@ -401,12 +411,17 @@ def _extract_product(card: Tag, keyword: str) -> Product | None:
     rating = _parse_number(rating_text)
     review_text = _select_text(card, "span.a-size-base.s-underline-text")
     review_count = _parse_integer(review_text)
+    card_text = _clean_text(card.get_text(" ", strip=True))
+    card_lower = card_text.lower()
     delivery_text = _extract_delivery_text(card)
+    fallback_delivery = _delivery_fallback_from_card_text(card_text)
+    if fallback_delivery and fallback_delivery.casefold() not in delivery_text.casefold():
+        delivery_text = " | ".join(
+            value for value in (delivery_text, fallback_delivery) if value
+        )
     delivery_lower = delivery_text.lower()
     delivery_options = _extract_delivery_options(delivery_text)
     delivery_detail = _extract_delivery_detail(delivery_text)
-    card_text = _clean_text(card.get_text(" ", strip=True))
-    card_lower = card_text.lower()
 
     unavailable_markers = ("cannot be shipped", "not deliverable", "unavailable")
     has_unavailable_marker = any(marker in delivery_lower for marker in unavailable_markers)
@@ -530,31 +545,54 @@ def scrape_keyword(
                 break
 
             accepted_on_page = 0
+            rejected = {
+                "không đọc được": 0,
+                "trùng ASIN": 0,
+                "chứa Amazon": 0,
+                "thiếu FREE": 0,
+                "thiếu Today/Tomorrow/Overnight": 0,
+                "ngoài khoảng giá": 0,
+                "không giao được": 0,
+                "không phải USD": 0,
+            }
             for card in cards:
                 product = _extract_product(card, keyword)
-                if product is None or product.asin in seen_asins:
+                if product is None:
+                    rejected["không đọc được"] += 1
+                    continue
+                if product.asin in seen_asins:
+                    rejected["trùng ASIN"] += 1
                     continue
                 seen_asins.add(product.asin)
                 if _title_contains_amazon(product.title):
+                    rejected["chứa Amazon"] += 1
                     _log(
                         log_callback,
                         f"Bỏ ASIN {product.asin}: tiêu đề chứa từ Amazon.",
                     )
                     continue
                 # This app only publishes genuinely free and urgent delivery offers.
-                if not product.free_shipping or not product.delivery_options:
+                if not product.free_shipping:
+                    rejected["thiếu FREE"] += 1
+                    continue
+                if not product.delivery_options:
+                    rejected["thiếu Today/Tomorrow/Overnight"] += 1
                     continue
                 if minimum_price is not None and (
                     product.price is None or product.price < minimum_price
                 ):
+                    rejected["ngoài khoảng giá"] += 1
                     continue
                 if maximum_price is not None and (
                     product.price is None or product.price > maximum_price
                 ):
+                    rejected["ngoài khoảng giá"] += 1
                     continue
                 if only_deliverable and not product.delivery_available:
+                    rejected["không giao được"] += 1
                     continue
                 if only_usd and product.currency != "USD":
+                    rejected["không phải USD"] += 1
                     continue
                 products.append(product)
                 accepted_on_page += 1
@@ -563,9 +601,16 @@ def scrape_keyword(
 
             _log(
                 log_callback,
-                f"Trang {page_number}: nhận {accepted_on_page} sản phẩm, "
-                f"tổng ngách {len(products)}.",
+                f"Trang {page_number}: thấy {len(cards)} thẻ, nhận "
+                f"{accepted_on_page} sản phẩm, tổng ngách {len(products)}.",
             )
+            rejection_summary = ", ".join(
+                f"{reason}={count}"
+                for reason, count in rejected.items()
+                if count
+            )
+            if rejection_summary:
+                _log(log_callback, f"Lý do loại trang {page_number}: {rejection_summary}.")
             if page_number < max_pages and len(products) < max_products:
                 time.sleep(DEFAULT_DELAY_SECONDS)
 

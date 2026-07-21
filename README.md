@@ -17,6 +17,7 @@ Web app Streamlit tiếng Việt để chạy tuần tự nhiều ngách Amazon,
 - Tự loại mọi sản phẩm có tiêu đề chứa `Amazon`, không phân biệt chữ hoa/thường.
 - Chỉ nhận sản phẩm vừa có `FREE delivery/free shipping` vừa có `Today`, `Tomorrow` hoặc `Overnight`.
 - Thông tin giao hàng được rút gọn thành nội dung hữu ích như `Overnight 4 AM - 8 AM`, không lấy quảng cáo Prime hay bộ đếm đặt hàng.
+- Có bộ đọc dự phòng khi Amazon đổi class HTML giao hàng và log thống kê từng lý do sản phẩm bị loại.
 - Đồng bộ CSV lên Google Drive ngay sau từng ngách.
 - Cuối phiên tạo `manifest.json` và ZIP, đồng bộ cả hai lên Drive.
 - Lịch sử phiên chạy, biểu đồ theo ngách/giá/vận chuyển.
