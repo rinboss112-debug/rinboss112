@@ -24,6 +24,8 @@ from urllib3.util.retry import Retry
 AMAZON_BASE_URL = "https://www.amazon.com"
 DEFAULT_TIMEOUT_SECONDS = 30
 DEFAULT_DELAY_SECONDS = 1.25
+DETAIL_CHECK_DELAY_SECONDS = 0.75
+MAX_DETAIL_CHECKS_PER_NICHE = 24
 
 LogCallback = Callable[[str], None]
 ProgressCallback = Callable[[int, int, str, str, int], None]
@@ -388,6 +390,93 @@ def _extract_delivery_detail(delivery_text: str) -> str:
     return ", ".join(details)
 
 
+def _delivery_text_from_detail_html(page_html: str) -> str:
+    """Extract delivery promises from an Amazon product detail page."""
+    soup = BeautifulSoup(page_html, "lxml")
+    selectors = (
+        "#mir-layout-DELIVERY_BLOCK",
+        "[id*='DELIVERY_BLOCK']",
+        "#deliveryBlockMessage",
+        "#delivery-message",
+        "#fast-track-message",
+        "[data-feature-name='deliveryMessages']",
+        "[data-csa-c-delivery-time]",
+        "[data-csa-c-delivery-price]",
+    )
+    pieces: list[str] = []
+    for selector in selectors:
+        for node in soup.select(selector):
+            values = [
+                node.get_text(" ", strip=True),
+                str(node.get("data-csa-c-delivery-time", "")),
+                str(node.get("data-csa-c-delivery-price", "")),
+            ]
+            for value in values:
+                clean = _clean_text(value)
+                if clean and clean not in pieces:
+                    pieces.append(clean)
+
+    combined = " | ".join(pieces)
+    full_text = _clean_text(soup.get_text(" ", strip=True))
+    fallback = _delivery_fallback_from_card_text(full_text)
+    if fallback and fallback.casefold() not in combined.casefold():
+        combined = " | ".join(value for value in (combined, fallback) if value)
+    return combined
+
+
+def _apply_delivery_text(product: Product, delivery_text: str) -> None:
+    delivery_text = _clean_text(delivery_text)
+    delivery_lower = delivery_text.lower()
+    unavailable_markers = ("cannot be shipped", "not deliverable", "unavailable")
+    product.delivery_options = _extract_delivery_options(delivery_text)
+    product.delivery_detail = _extract_delivery_detail(delivery_text)
+    product.delivery_available = bool(delivery_text) and not any(
+        marker in delivery_lower for marker in unavailable_markers
+    )
+    product.free_shipping = (
+        "free delivery" in delivery_lower or "free shipping" in delivery_lower
+    )
+    product.fast_shipping = bool(product.delivery_options)
+
+
+def _enrich_delivery_from_detail(
+    session: requests.Session,
+    product: Product,
+) -> str:
+    """Check a detail page when Cloud search HTML omits delivery promises.
+
+    Returns ``verified``, ``missing``, ``blocked`` or ``error`` so the caller can
+    stop detail requests when Amazon starts throttling the Cloud IP.
+    """
+    try:
+        response = session.get(
+            product.product_url,
+            headers={"Referer": f"{AMAZON_BASE_URL}/s?k={quote_plus(product.keyword)}"},
+            timeout=DEFAULT_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+    except requests.RequestException:
+        return "error"
+    if _looks_blocked(response.text):
+        return "blocked"
+
+    delivery_text = _delivery_text_from_detail_html(response.text)
+    if not delivery_text:
+        return "missing"
+    previous_free_shipping = product.free_shipping
+    previous_options = product.delivery_options
+    previous_detail = product.delivery_detail
+    _apply_delivery_text(product, delivery_text)
+    product.free_shipping = previous_free_shipping or product.free_shipping
+    if not product.delivery_options and previous_options:
+        product.delivery_options = previous_options
+        product.delivery_detail = previous_detail
+    product.fast_shipping = bool(product.delivery_options)
+    if product.free_shipping and product.delivery_options:
+        return "verified"
+    return "missing"
+
+
 def _extract_product(card: Tag, keyword: str) -> Product | None:
     asin = _clean_text(card.get("data-asin"))
     title = _select_text(card, "h2 span") or _select_text(card, "h2")
@@ -413,19 +502,10 @@ def _extract_product(card: Tag, keyword: str) -> Product | None:
         delivery_text = " | ".join(
             value for value in (delivery_text, fallback_delivery) if value
         )
-    delivery_lower = delivery_text.lower()
-    delivery_options = _extract_delivery_options(delivery_text)
-    delivery_detail = _extract_delivery_detail(delivery_text)
-
-    unavailable_markers = ("cannot be shipped", "not deliverable", "unavailable")
-    has_unavailable_marker = any(marker in delivery_lower for marker in unavailable_markers)
-    delivery_available = bool(delivery_text) and not has_unavailable_marker
-    free_shipping = "free delivery" in delivery_lower or "free shipping" in delivery_lower
-    fast_shipping = bool(delivery_options)
     prime = card.select_one("i.a-icon-prime, [aria-label*='Prime']") is not None
     sponsored = "sponsored" in card_lower
 
-    return Product(
+    product = Product(
         keyword=keyword,
         asin=asin,
         title=title,
@@ -434,16 +514,18 @@ def _extract_product(card: Tag, keyword: str) -> Product | None:
         rating=rating,
         review_count=review_count,
         prime=prime,
-        free_shipping=free_shipping,
-        fast_shipping=fast_shipping,
-        delivery_available=delivery_available,
-        delivery_options=delivery_options,
-        delivery_detail=delivery_detail,
+        free_shipping=False,
+        fast_shipping=False,
+        delivery_available=False,
+        delivery_options="",
+        delivery_detail="",
         image_url=image_url,
         product_url=product_url,
         sponsored=sponsored,
         scraped_at=datetime.now().isoformat(timespec="seconds"),
     )
+    _apply_delivery_text(product, delivery_text)
+    return product
 
 
 def _looks_blocked(page_text: str) -> bool:
@@ -511,6 +593,12 @@ def scrape_keyword(
 
     products: list[Product] = []
     seen_asins: set[str] = set()
+    detail_checks_remaining = min(
+        MAX_DETAIL_CHECKS_PER_NICHE,
+        max(6, max_products * 3),
+    )
+    detail_fallback_announced = False
+    detail_requests_made = 0
     session = _build_session()
     try:
         _log(log_callback, f"Bắt đầu ngách '{keyword}'.")
@@ -539,6 +627,8 @@ def scrape_keyword(
                 break
 
             accepted_on_page = 0
+            detail_attempts_on_page = 0
+            detail_verified_on_page = 0
             rejected = {
                 "không đọc được": 0,
                 "trùng ASIN": 0,
@@ -557,6 +647,55 @@ def scrape_keyword(
                     rejected["trùng ASIN"] += 1
                     continue
                 seen_asins.add(product.asin)
+                price_matches = not (
+                    minimum_price is not None
+                    and (product.price is None or product.price < minimum_price)
+                ) and not (
+                    maximum_price is not None
+                    and (product.price is None or product.price > maximum_price)
+                )
+                currency_matches = not only_usd or product.currency == "USD"
+                needs_delivery_detail = not (
+                    product.free_shipping and product.delivery_options
+                )
+                has_delivery_signal = (
+                    product.free_shipping or bool(product.delivery_options)
+                )
+                if (
+                    needs_delivery_detail
+                    and has_delivery_signal
+                    and price_matches
+                    and currency_matches
+                    and detail_checks_remaining > 0
+                ):
+                    if not detail_fallback_announced:
+                        _log(
+                            log_callback,
+                            "Amazon Cloud không hiển thị đủ thời gian giao trong "
+                            "kết quả tìm kiếm; đang kiểm tra có giới hạn từ "
+                            "trang chi tiết sản phẩm.",
+                        )
+                        detail_fallback_announced = True
+                    if detail_requests_made:
+                        time.sleep(DETAIL_CHECK_DELAY_SECONDS)
+                    detail_status = _enrich_delivery_from_detail(session, product)
+                    detail_requests_made += 1
+                    detail_attempts_on_page += 1
+                    detail_checks_remaining -= 1
+                    if detail_status == "verified":
+                        detail_verified_on_page += 1
+                    elif detail_status in {"blocked", "error"}:
+                        detail_checks_remaining = 0
+                        reason = (
+                            "Amazon yêu cầu CAPTCHA"
+                            if detail_status == "blocked"
+                            else "Amazon trả về lỗi kết nối/503"
+                        )
+                        _log(
+                            log_callback,
+                            f"CẢNH BÁO: Dừng kiểm tra trang chi tiết vì {reason}; "
+                            "không gửi thêm request trong ngách này.",
+                        )
                 # This app only publishes genuinely free and urgent delivery offers.
                 if not product.free_shipping:
                     rejected["thiếu FREE"] += 1
@@ -590,6 +729,13 @@ def scrape_keyword(
                 f"Trang {page_number}: thấy {len(cards)} thẻ, nhận "
                 f"{accepted_on_page} sản phẩm, tổng ngách {len(products)}.",
             )
+            if detail_attempts_on_page:
+                _log(
+                    log_callback,
+                    f"Kiểm tra trang chi tiết: {detail_attempts_on_page} sản phẩm, "
+                    f"xác minh được {detail_verified_on_page} sản phẩm FREE + "
+                    "Today/Tomorrow/Overnight.",
+                )
             rejection_summary = ", ".join(
                 f"{reason}={count}"
                 for reason, count in rejected.items()
