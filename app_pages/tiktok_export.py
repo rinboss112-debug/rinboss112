@@ -12,6 +12,7 @@ from tiktok_export import (
     EXPORT_FIELDS,
     TIKTOK_XLSX_MIME,
     build_preparation_workbook,
+    detect_data_start_row,
     detect_header_row,
     fill_official_template,
     preparation_filename,
@@ -20,6 +21,7 @@ from tiktok_export import (
     selected_products,
     suggest_template_mapping,
     template_headers,
+    tiktok_template_style_repair_count,
     validate_products,
     workbook_sheet_names,
 )
@@ -373,6 +375,14 @@ with st.container(border=True):
             st.session_state.pop("tiktok_filled_template", None)
             st.session_state.pop("tiktok_filled_filename", None)
         try:
+            repair_count = tiktok_template_style_repair_count(template_bytes)
+            if repair_count:
+                st.info(
+                    "Template chính thức có giá trị màu không hợp lệ do TikTok "
+                    f"tạo ra ({repair_count} vị trí). Tool sẽ tự sửa trên bản sao "
+                    "khi xử lý; file gốc của bạn không bị thay đổi.",
+                    icon=":material/build:",
+                )
             sheets = workbook_sheet_names(template_bytes)
             selected_sheet = st.selectbox(
                 "Sheet chứa bảng sản phẩm",
@@ -386,6 +396,22 @@ with st.container(border=True):
                 value=int(detected_row),
                 step=1,
                 key="tiktok_template_header_row",
+            )
+            detected_data_row = detect_data_start_row(
+                template_bytes,
+                selected_sheet,
+                int(header_row),
+            )
+            data_start_row = st.number_input(
+                "Dòng bắt đầu ghi sản phẩm",
+                min_value=int(header_row) + 1,
+                value=int(detected_data_row),
+                step=1,
+                help=(
+                    "Tool tự nhận diện dòng 7 với template Seller Center V5 và "
+                    "giữ nguyên các dòng cấu hình phía trên."
+                ),
+                key="tiktok_template_data_start_row",
             )
             headers = template_headers(
                 template_bytes,
@@ -453,6 +479,7 @@ with st.container(border=True):
                             template_bytes,
                             sheet_name=selected_sheet,
                             header_row=int(header_row),
+                            data_start_row=int(data_start_row),
                             mapping=mapping,
                             products=validated,
                         )

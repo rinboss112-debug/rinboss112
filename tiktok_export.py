@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import re
+import zipfile
 from copy import copy
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +19,8 @@ from amazon_scraper import slugify_filename
 TIKTOK_XLSX_MIME = (
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
+
+_TIKTOK_INVALID_ARGB = re.compile(rb'(?P<prefix>\brgb=")FF(?P<suffix>")', re.I)
 
 EDITOR_COLUMNS = [
     "selected",
@@ -53,6 +56,7 @@ class ExportField:
 
 
 EXPORT_FIELDS = (
+    ExportField("category", "Danh mục TikTok", ("category", "product category")),
     ExportField("seller_sku", "Seller SKU", ("seller sku", "sku", "sku id")),
     ExportField(
         "product_title",
@@ -108,17 +112,34 @@ EXPORT_FIELDS = (
     ExportField(
         "gtin_upc",
         "GTIN/UPC",
-        ("gtin", "upc", "gtin/upc", "product identifier"),
+        (
+            "gtin",
+            "upc",
+            "gtin/upc",
+            "gtin code",
+            "identifier code",
+            "product identifier",
+        ),
     ),
     ExportField(
         "variation_name",
         "Tên biến thể 1",
-        ("variation 1 name", "variation name", "sales attribute 1"),
+        (
+            "variation 1 name",
+            "variation name",
+            "property name 1",
+            "sales attribute 1",
+        ),
     ),
     ExportField(
         "variation_value",
         "Giá trị biến thể 1",
-        ("variation 1 value", "variation value", "sales attribute value 1"),
+        (
+            "variation 1 value",
+            "variation value",
+            "property value 1",
+            "sales attribute value 1",
+        ),
     ),
 )
 
@@ -545,10 +566,70 @@ def build_preparation_workbook(
     return output.getvalue()
 
 
-def workbook_sheet_names(template_bytes: bytes) -> list[str]:
-    workbook = load_workbook(
-        io.BytesIO(template_bytes), read_only=True, data_only=False
+def tiktok_template_style_repair_count(template_bytes: bytes) -> int:
+    """Return the number of TikTok's known invalid ``rgb=\"FF\"`` values."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(template_bytes)) as archive:
+            try:
+                styles = archive.read("xl/styles.xml")
+            except KeyError:
+                return 0
+    except zipfile.BadZipFile as error:
+        raise ValueError("File tải lên không phải workbook XLSX hợp lệ.") from error
+    return len(_TIKTOK_INVALID_ARGB.findall(styles))
+
+
+def _repair_tiktok_template_styles(template_bytes: bytes) -> bytes:
+    """Repair TikTok Seller Center's short aRGB value in an in-memory copy.
+
+    Some official category templates contain ``rgb=\"FF\"`` on borders whose
+    style is ``none``. Excel ignores the colour, while openpyxl correctly
+    rejects it because SpreadsheetML requires a 6- or 8-digit aRGB value.
+    Replacing it with opaque black preserves the invisible-border semantics and
+    lets the rest of the official workbook load unchanged.
+    """
+    try:
+        with zipfile.ZipFile(io.BytesIO(template_bytes)) as source:
+            try:
+                styles = source.read("xl/styles.xml")
+            except KeyError:
+                return template_bytes
+            repaired_styles, repair_count = _TIKTOK_INVALID_ARGB.subn(
+                rb"\g<prefix>FF000000\g<suffix>", styles
+            )
+            if repair_count == 0:
+                return template_bytes
+
+            output = io.BytesIO()
+            with zipfile.ZipFile(output, "w") as destination:
+                destination.comment = source.comment
+                for entry in source.infolist():
+                    content = (
+                        repaired_styles
+                        if entry.filename == "xl/styles.xml"
+                        else source.read(entry.filename)
+                    )
+                    destination.writestr(entry, content)
+            return output.getvalue()
+    except zipfile.BadZipFile as error:
+        raise ValueError("File tải lên không phải workbook XLSX hợp lệ.") from error
+
+
+def _load_tiktok_template(
+    template_bytes: bytes,
+    *,
+    read_only: bool,
+):
+    compatible_bytes = _repair_tiktok_template_styles(template_bytes)
+    return load_workbook(
+        io.BytesIO(compatible_bytes),
+        read_only=read_only,
+        data_only=False,
     )
+
+
+def workbook_sheet_names(template_bytes: bytes) -> list[str]:
+    workbook = _load_tiktok_template(template_bytes, read_only=True)
     try:
         return list(workbook.sheetnames)
     finally:
@@ -558,9 +639,7 @@ def workbook_sheet_names(template_bytes: bytes) -> list[str]:
 def detect_header_row(
     template_bytes: bytes, sheet_name: str, max_scan_rows: int = 30
 ) -> int:
-    workbook = load_workbook(
-        io.BytesIO(template_bytes), read_only=True, data_only=False
-    )
+    workbook = _load_tiktok_template(template_bytes, read_only=True)
     try:
         sheet = workbook[sheet_name]
         aliases = {
@@ -570,10 +649,14 @@ def detect_header_row(
         }
         best_row = 1
         best_score = -1
-        for row_number in range(1, min(sheet.max_row, max_scan_rows) + 1):
+        scan_limit = min(sheet.max_row or 1, max_scan_rows)
+        for row_number, row in enumerate(
+            sheet.iter_rows(min_row=1, max_row=scan_limit),
+            start=1,
+        ):
             values = [
                 _normalized_name(cell.value)
-                for cell in sheet[row_number]
+                for cell in row
                 if cell.value not in (None, "")
             ]
             alias_hits = sum(value in aliases for value in values)
@@ -591,9 +674,7 @@ def template_headers(
     sheet_name: str,
     header_row: int,
 ) -> list[dict[str, Any]]:
-    workbook = load_workbook(
-        io.BytesIO(template_bytes), read_only=True, data_only=False
-    )
+    workbook = _load_tiktok_template(template_bytes, read_only=True)
     try:
         sheet = workbook[sheet_name]
         headers: list[dict[str, Any]] = []
@@ -610,6 +691,23 @@ def template_headers(
             )
             headers.append({"label": label, "header": value, "column": column})
         return headers
+    finally:
+        workbook.close()
+
+
+def detect_data_start_row(
+    template_bytes: bytes,
+    sheet_name: str,
+    header_row: int,
+) -> int:
+    """Detect the first writable product row without overwriting TikTok metadata."""
+    workbook = _load_tiktok_template(template_bytes, read_only=True)
+    try:
+        sheet = workbook[sheet_name]
+        marker = str(sheet.cell(header_row + 1, 1).value or "").strip()
+        if re.fullmatch(r"V\d+(?:\.\d+)+", marker, flags=re.I):
+            return header_row + 6
+        return header_row + 1
     finally:
         workbook.close()
 
@@ -639,10 +737,11 @@ def fill_official_template(
     *,
     sheet_name: str,
     header_row: int,
+    data_start_row: int | None = None,
     mapping: Mapping[str, str],
     products: pd.DataFrame,
 ) -> bytes:
-    workbook = load_workbook(io.BytesIO(template_bytes), data_only=False)
+    workbook = _load_tiktok_template(template_bytes, read_only=False)
     if sheet_name not in workbook.sheetnames:
         workbook.close()
         raise ValueError("Không tìm thấy sheet đã chọn trong template.")
@@ -674,10 +773,24 @@ def fill_official_template(
         workbook.close()
         raise ValueError("Chưa ánh xạ cột nào vào template TikTok.")
 
-    style_row = header_row + 1
+    if data_start_row is None:
+        data_start_row = detect_data_start_row(
+            template_bytes,
+            sheet_name,
+            header_row,
+        )
+    if data_start_row <= header_row:
+        workbook.close()
+        raise ValueError("Dòng bắt đầu dữ liệu phải nằm sau dòng tiêu đề cột.")
+
+    template_category = ""
+    if "Category" in workbook.sheetnames:
+        template_category = str(workbook["Category"]["A1"].value or "").strip()
+
+    style_row = data_start_row
     original_max_row = sheet.max_row
-    for offset, (_, product) in enumerate(selected.iterrows(), start=1):
-        target_row = header_row + offset
+    for offset, (_, product) in enumerate(selected.iterrows()):
+        target_row = data_start_row + offset
         for source_key, target_column in clean_mapping.items():
             target_cell = sheet.cell(target_row, target_column)
             if target_row > original_max_row or not target_cell.has_style:
@@ -688,6 +801,8 @@ def fill_official_template(
                     target_cell.alignment = copy(style_cell.alignment)
                     target_cell.protection = copy(style_cell.protection)
             value = _clean_cell(product.get(source_key, ""))
+            if source_key == "category" and not str(value).strip():
+                value = template_category
             if isinstance(value, float) and pd.isna(value):
                 value = ""
             target_cell.value = value

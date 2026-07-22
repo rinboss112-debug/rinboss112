@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import unittest
+import zipfile
 from pathlib import Path
 
 import pandas as pd
@@ -12,11 +13,13 @@ from streamlit.testing.v1 import AppTest
 from tiktok_export import (
     build_preparation_workbook,
     calculate_tiktok_price,
+    detect_data_start_row,
     detect_header_row,
     fill_official_template,
     prepare_products,
     suggest_template_mapping,
     template_headers,
+    tiktok_template_style_repair_count,
     validate_products,
     workbook_sheet_names,
 )
@@ -58,6 +61,45 @@ def _template_bytes() -> bytes:
     notes = workbook.create_sheet("Instructions")
     notes["A1"] = "Do not delete this sheet"
     notes["B2"] = "=1+1"
+    workbook.create_sheet("Empty")
+    output = io.BytesIO()
+    workbook.save(output)
+    return output.getvalue()
+
+
+def _template_with_tiktok_invalid_style() -> bytes:
+    template = _template_bytes()
+    source = zipfile.ZipFile(io.BytesIO(template))
+    output = io.BytesIO()
+    with source, zipfile.ZipFile(output, "w") as destination:
+        for entry in source.infolist():
+            content = source.read(entry.filename)
+            if entry.filename == "xl/styles.xml":
+                content = content.replace(
+                    b"</styleSheet>",
+                    (
+                        b'<dxfs count="1"><dxf><border>'
+                        b'<left style="none"><color rgb="FF"/></left>'
+                        b'</border></dxf></dxfs></styleSheet>'
+                    ),
+                )
+            destination.writestr(entry, content)
+    return output.getvalue()
+
+
+def _versioned_tiktok_template_bytes() -> bytes:
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Template"
+    sheet.append(["category", "product_name"])
+    sheet.append(["V5.0.2", "create_product"])
+    sheet.append(["Category", "Product name"])
+    sheet.append(["Mandatory", "Mandatory"])
+    sheet.append(["Instructions", "Instructions"])
+    sheet.append(["Example category", "Example product"])
+    sheet.append(["Breakfast Cereals", None])
+    category = workbook.create_sheet("Category")
+    category["A1"] = "Breakfast Cereals"
     output = io.BytesIO()
     workbook.save(output)
     return output.getvalue()
@@ -106,9 +148,14 @@ class TikTokExportTests(unittest.TestCase):
 
     def test_fill_official_template_preserves_other_sheet(self) -> None:
         template = _template_bytes()
-        self.assertEqual(workbook_sheet_names(template), ["Upload", "Instructions"])
+        self.assertEqual(
+            workbook_sheet_names(template),
+            ["Upload", "Instructions", "Empty"],
+        )
+        self.assertEqual(detect_header_row(template, "Empty"), 1)
         header_row = detect_header_row(template, "Upload")
         self.assertEqual(header_row, 2)
+        self.assertEqual(detect_data_start_row(template, "Upload", header_row), 3)
         headers = template_headers(template, "Upload", header_row)
         suggestions = suggest_template_mapping(headers)
         self.assertEqual(suggestions["seller_sku"], "Seller SKU")
@@ -140,6 +187,61 @@ class TikTokExportTests(unittest.TestCase):
                 "Do not delete this sheet",
             )
             self.assertEqual(workbook["Instructions"]["B2"].value, "=1+1")
+        finally:
+            workbook.close()
+
+    def test_official_template_invalid_short_argb_is_repaired(self) -> None:
+        template = _template_with_tiktok_invalid_style()
+        self.assertEqual(tiktok_template_style_repair_count(template), 1)
+        self.assertEqual(
+            workbook_sheet_names(template),
+            ["Upload", "Instructions", "Empty"],
+        )
+
+        products = prepare_products(_sample_source())
+        filled = fill_official_template(
+            template,
+            sheet_name="Upload",
+            header_row=2,
+            mapping={"seller_sku": "Seller SKU"},
+            products=products,
+        )
+        self.assertEqual(tiktok_template_style_repair_count(filled), 0)
+        workbook = load_workbook(io.BytesIO(filled), data_only=False)
+        try:
+            self.assertEqual(
+                workbook["Upload"]["A3"].value,
+                "SNACK_BOX-B012345678",
+            )
+            self.assertEqual(
+                workbook["Instructions"]["A1"].value,
+                "Do not delete this sheet",
+            )
+        finally:
+            workbook.close()
+
+    def test_versioned_template_preserves_example_and_starts_on_row_seven(self) -> None:
+        template = _versioned_tiktok_template_bytes()
+        self.assertEqual(detect_data_start_row(template, "Template", 1), 7)
+        headers = template_headers(template, "Template", 1)
+        mapping = suggest_template_mapping(headers)
+        filled = fill_official_template(
+            template,
+            sheet_name="Template",
+            header_row=1,
+            mapping=mapping,
+            products=prepare_products(_sample_source()),
+        )
+        workbook = load_workbook(io.BytesIO(filled), data_only=False)
+        try:
+            sheet = workbook["Template"]
+            self.assertEqual(sheet["A6"].value, "Example category")
+            self.assertEqual(sheet["B6"].value, "Example product")
+            self.assertEqual(sheet["A7"].value, "Breakfast Cereals")
+            self.assertEqual(
+                sheet["B7"].value,
+                "Healthy Snack Box Variety Pack for Adults",
+            )
         finally:
             workbook.close()
 
