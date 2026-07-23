@@ -8,11 +8,15 @@ import pandas as pd
 from streamlit.testing.v1 import AppTest
 
 from temu_hot_products import (
+    build_temu_niche_links,
+    build_temu_search_url,
     classify_category,
     filter_temu_products,
+    normalize_niches,
     normalize_temu_products,
     read_temu_product_file,
     temu_csv_template,
+    temu_niche_links_csv,
 )
 
 
@@ -58,6 +62,21 @@ def _source() -> pd.DataFrame:
 
 
 class TemuHotProductTests(unittest.TestCase):
+    def test_build_niche_links_deduplicates_and_encodes_search_terms(self) -> None:
+        self.assertEqual(
+            normalize_niches(" snack box\nSNACK BOX\npet grooming tools\n"),
+            ["snack box", "pet grooming tools"],
+        )
+        self.assertEqual(
+            build_temu_search_url("snack box"),
+            "https://www.temu.com/search_result.html?search_key=snack%20box",
+        )
+        links = build_temu_niche_links("snack box\npet grooming tools")
+        self.assertEqual(len(links), 2)
+        self.assertEqual(links.loc[0, "category_group"], "Food & Grocery")
+        downloaded = pd.read_csv(io.BytesIO(temu_niche_links_csv(links)))
+        self.assertEqual(downloaded["niche"].tolist(), links["niche"].tolist())
+
     def test_blank_manual_rows_are_ignored(self) -> None:
         from temu_hot_products import empty_temu_input
 
@@ -109,6 +128,25 @@ class TemuHotProductTests(unittest.TestCase):
         self.assertEqual([], list(app.exception))
         self.assertEqual(len(app.file_uploader), 1)
         self.assertEqual(len(app.metric), 4)
+
+    def test_page_creates_niche_search_links(self) -> None:
+        project_dir = Path(__file__).resolve().parents[1]
+        app = AppTest.from_file(
+            project_dir / "app_pages" / "temu_hot_products.py",
+            default_timeout=30,
+        )
+        app.secrets = {"admin": {"password": "test"}}
+        app.session_state["admin_authenticated"] = True
+        app.run()
+        app.text_area[0].set_value("snack box\npet grooming tools")
+        app.button[0].click()
+        app.run()
+        self.assertEqual([], list(app.exception))
+        self.assertEqual(app.metric[0].value, "2")
+        self.assertIn(
+            "search_key=snack%20box",
+            app.dataframe[0].value.loc[0, "temu_search_url"],
+        )
 
     def test_page_processes_uploaded_csv(self) -> None:
         project_dir = Path(__file__).resolve().parents[1]

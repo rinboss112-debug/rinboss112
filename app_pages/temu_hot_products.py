@@ -7,11 +7,13 @@ import pandas as pd
 import streamlit as st
 
 from temu_hot_products import (
+    build_temu_niche_links,
     empty_temu_input,
     filter_temu_products,
     normalize_temu_products,
     read_temu_product_file,
     temu_csv_template,
+    temu_niche_links_csv,
     temu_results_csv,
 )
 
@@ -86,6 +88,59 @@ with st.container(border=True):
         "Chuẩn hóa dữ liệu Temu được phép sử dụng, lọc sản phẩm từ $20 và "
         "xếp hạng theo tín hiệu bán hàng. Trang này không tự động cào temu.com."
     )
+
+with st.container(border=True):
+    st.subheader(
+        "Tạo link Temu US theo ngách",
+        anchor=False,
+        divider="orange",
+    )
+    st.caption(
+        "Nhập mỗi ngách trên một dòng. Công cụ chỉ tạo link tìm kiếm để bạn mở "
+        "trên Temu, không đọc chi tiết sản phẩm."
+    )
+    with st.form("temu_niche_link_form", border=False):
+        niche_text = st.text_area(
+            "Danh sách ngách",
+            placeholder="snack box\nkitchen organizer\npet grooming tools",
+            height=130,
+            key="temu_niche_text",
+        )
+        create_links = st.form_submit_button(
+            "Tạo link ngách",
+            type="primary",
+            icon=":material/link:",
+        )
+
+    if create_links:
+        st.session_state["temu_niche_links"] = build_temu_niche_links(niche_text)
+
+    niche_links = st.session_state.get("temu_niche_links", pd.DataFrame())
+    if create_links and niche_links.empty:
+        st.warning("Hãy nhập ít nhất một ngách.")
+    if not niche_links.empty:
+        st.metric("Số link ngách", len(niche_links))
+        st.dataframe(
+            niche_links,
+            hide_index=True,
+            column_config={
+                "niche": st.column_config.TextColumn("Ngách", pinned=True),
+                "category_group": st.column_config.TextColumn("Nhóm ngách"),
+                "temu_search_url": st.column_config.LinkColumn(
+                    "Mở trên Temu US",
+                    display_text="Mở ngách",
+                ),
+            },
+        )
+        st.download_button(
+            "Tải danh sách link CSV",
+            temu_niche_links_csv(niche_links),
+            file_name="temu_niche_links.csv",
+            mime="text/csv",
+            icon=":material/download:",
+            on_click="ignore",
+            key="download_temu_niche_links",
+        )
 
 st.info(
     "Điểm hot tối đa 100: số bán 40 điểm, review 20, rating 20, giảm giá 10, "

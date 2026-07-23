@@ -5,7 +5,7 @@ import math
 import re
 from pathlib import Path
 from typing import Any, Iterable
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 
 import pandas as pd
 
@@ -29,6 +29,8 @@ TEMU_PRODUCT_COLUMNS = [
     "hot_score",
     "hot_label",
 ]
+
+TEMU_SEARCH_URL = "https://www.temu.com/search_result.html"
 
 
 _ALIASES: dict[str, tuple[str, ...]] = {
@@ -228,6 +230,50 @@ def classify_category(category: object, title: object = "") -> str:
         if any(keyword in searchable for keyword in keywords):
             return group
     return "Other"
+
+
+def normalize_niches(values: str | Iterable[str]) -> list[str]:
+    source = values.splitlines() if isinstance(values, str) else values
+    niches: list[str] = []
+    seen: set[str] = set()
+    for value in source:
+        niche = re.sub(r"\s+", " ", str(value)).strip()
+        identity = niche.casefold()
+        if not niche or identity in seen:
+            continue
+        seen.add(identity)
+        niches.append(niche)
+    return niches
+
+
+def build_temu_search_url(niche: str) -> str:
+    normalized = normalize_niches([niche])
+    if not normalized:
+        raise ValueError("Tên ngách không được để trống.")
+    query = urlencode({"search_key": normalized[0]}, quote_via=quote)
+    return f"{TEMU_SEARCH_URL}?{query}"
+
+
+def build_temu_niche_links(values: str | Iterable[str]) -> pd.DataFrame:
+    niches = normalize_niches(values)
+    return pd.DataFrame(
+        {
+            "niche": pd.Series(niches, dtype="string"),
+            "category_group": pd.Series(
+                [classify_category("", niche) for niche in niches],
+                dtype="string",
+            ),
+            "temu_search_url": pd.Series(
+                [build_temu_search_url(niche) for niche in niches],
+                dtype="string",
+            ),
+        }
+    )
+
+
+def temu_niche_links_csv(frame: pd.DataFrame) -> bytes:
+    columns = ["niche", "category_group", "temu_search_url"]
+    return frame.reindex(columns=columns).to_csv(index=False).encode("utf-8-sig")
 
 
 def _hot_label(score: float) -> str:
