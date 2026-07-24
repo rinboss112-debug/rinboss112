@@ -74,6 +74,12 @@ tiktok_export_page = st.Page(
     icon=":material/table_view:",
     url_path="tiktok-shop-us",
 )
+amazon_images_page = st.Page(
+    "app_pages/amazon_images.py",
+    title="Ảnh Amazon",
+    icon=":material/imagesmode:",
+    url_path="amazon-images",
+)
 temu_hot_products_page = st.Page(
     "app_pages/temu_hot_products.py",
     title="Sản phẩm hot Temu",
@@ -105,7 +111,7 @@ published_pages = [
     page for page in content.get("pages", []) if bool(page.get("published", False))
 ]
 navigation_pages: dict[str, list[Any]] = {
-    "": [scraper_page, tiktok_export_page, temu_hot_products_page]
+    "": [scraper_page, tiktok_export_page, amazon_images_page, temu_hot_products_page]
 }
 for category in content.get("categories", []):
     category_id = str(category.get("id", ""))

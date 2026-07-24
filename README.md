@@ -160,6 +160,21 @@ upload thẳng. Không dùng Amazon để giao trực tiếp đơn TikTok, khôn
 hoặc thương hiệu khi chưa có quyền, và không chọn No brand cho sản phẩm rõ ràng
 có thương hiệu.
 
+## Bổ sung 5 ảnh cho CSV Amazon
+
+Mở đường dẫn `/amazon-images` và đăng nhập bằng mật khẩu admin:
+
+1. Tải lên CSV có cột `asin` hoặc `product_url`.
+2. Chọn lô nhỏ, khuyến nghị 10 sản phẩm và nghỉ ít nhất 2 giây giữa mỗi sản phẩm.
+3. Nhấn **Lấy tối đa 5 ảnh**.
+4. Tải CSV mới xuống sau mỗi lô để giữ tiến độ.
+5. Có thể tải chính file mới đó lên và tiếp tục lô kế tiếp.
+
+Tool giữ nguyên các cột cũ và thêm `image_url_1` đến `image_url_5` cùng cột
+`image_gallery_status`. Link ảnh được chuẩn hóa về ảnh gốc, bỏ các đoạn resize như
+`._AC_UL320_`. Nếu sản phẩm có ít hơn 5 ảnh thì trạng thái là `partial`; nếu Amazon
+trả CAPTCHA, HTTP 429 hoặc 503 thì lô dừng sớm để hạn chế chặn kết nối.
+
 ## Secrets đầy đủ
 
 File mẫu nằm tại `.streamlit/secrets.example.toml`. Chỉ sao chép những phần bạn cần. Không commit `.streamlit/secrets.toml`, `drive_secrets.toml`, OAuth JSON, refresh token, bot token hoặc mật khẩu email.
