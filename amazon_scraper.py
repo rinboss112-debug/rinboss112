@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -48,6 +49,7 @@ class Product:
     delivery_available: bool
     delivery_options: str
     delivery_detail: str
+    variants: str
     image_url: str
     product_url: str
     sponsored: bool
@@ -424,6 +426,170 @@ def _delivery_text_from_detail_html(page_html: str) -> str:
     return combined
 
 
+VARIANT_LABELS = {
+    "size_name": "Size",
+    "size": "Size",
+    "flavor_name": "Flavor",
+    "flavour_name": "Flavor",
+    "flavor": "Flavor",
+    "color_name": "Color",
+    "colour_name": "Color",
+    "color": "Color",
+    "style_name": "Style",
+    "style": "Style",
+    "pattern_name": "Pattern",
+    "scent_name": "Scent",
+    "item_package_quantity": "Package Quantity",
+    "number_of_items": "Number of Items",
+    "unit_count": "Unit Count",
+    "configuration": "Configuration",
+}
+MAX_VARIANT_GROUPS = 6
+MAX_VALUES_PER_VARIANT = 12
+
+
+def _variant_label(key: str, visible_label: str = "") -> str:
+    clean_key = re.sub(r"^variation_", "", _clean_text(key).casefold())
+    if clean_key in VARIANT_LABELS:
+        return VARIANT_LABELS[clean_key]
+    clean_visible = re.sub(r"\s*:\s*$", "", _clean_text(visible_label))
+    if clean_visible and len(clean_visible) <= 50:
+        return clean_visible
+    clean_key = re.sub(r"_name$", "", clean_key)
+    return re.sub(r"[_-]+", " ", clean_key).title()
+
+
+def _clean_variant_value(value: object) -> str:
+    clean = _clean_text(value)
+    clean = re.sub(r"^click to select\s+", "", clean, flags=re.IGNORECASE)
+    clean = re.sub(
+        r"\s*[-–—]?\s*currently unavailable\.?\s*$",
+        "",
+        clean,
+        flags=re.IGNORECASE,
+    )
+    clean = re.sub(r"\s*[-–—]?\s*see all buying options\s*$", "", clean, flags=re.I)
+    if (
+        not clean
+        or len(clean) > 120
+        or clean.casefold()
+        in {
+            "select",
+            "choose an option",
+            "currently unavailable",
+            "see all buying options",
+        }
+        or re.fullmatch(r"[\$€£]\s*\d+(?:[.,]\d+)?", clean)
+    ):
+        return ""
+    return clean
+
+
+def _add_variant_value(values: list[str], value: object) -> None:
+    clean = _clean_variant_value(value)
+    if not clean:
+        return
+    keys = {item.casefold() for item in values}
+    if clean.casefold() not in keys and len(values) < MAX_VALUES_PER_VARIANT:
+        values.append(clean)
+
+
+def _json_values_after_key(page_html: str, key: str) -> list[object]:
+    values: list[object] = []
+    decoder = json.JSONDecoder()
+    pattern = re.compile(rf'"{re.escape(key)}"\s*:\s*', flags=re.IGNORECASE)
+    for match in pattern.finditer(page_html or ""):
+        try:
+            value, _ = decoder.raw_decode((page_html or "")[match.end() :])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        values.append(value)
+    return values
+
+
+def _extract_variants_from_detail_html(page_html: str) -> str:
+    """Return Amazon variation choices in one compact CSV-friendly field."""
+    soup = BeautifulSoup(page_html or "", "lxml")
+    groups: dict[str, list[str]] = {}
+    labels_by_key: dict[str, str] = {}
+
+    for label_map in _json_values_after_key(page_html, "variationDisplayLabels"):
+        if isinstance(label_map, dict):
+            for key, label in label_map.items():
+                labels_by_key[str(key).casefold()] = _variant_label(
+                    str(key), str(label)
+                )
+
+    for container in soup.select("[id^='variation_']"):
+        container_id = str(container.get("id", ""))
+        key = re.sub(r"^variation_", "", container_id, flags=re.IGNORECASE)
+        if not key:
+            continue
+        label_node = container.select_one(".a-form-label, label")
+        label = _variant_label(
+            key,
+            label_node.get_text(" ", strip=True) if label_node else "",
+        )
+        values = groups.setdefault(label, [])
+        for node in container.select(
+            ".selection, .swatch-title-text-display, .dropdownAvailable, "
+            "select option, [role='radio'][aria-label]"
+        ):
+            _add_variant_value(
+                values,
+                node.get("aria-label", "") or node.get_text(" ", strip=True),
+            )
+        for node in container.select("li[title], [data-action='a-dropdown-button']"):
+            _add_variant_value(
+                values,
+                node.get("title", "") or node.get_text(" ", strip=True),
+            )
+        if not values:
+            for node in container.select(".a-button-text"):
+                _add_variant_value(values, node.get_text(" ", strip=True))
+
+    for variation_map in _json_values_after_key(page_html, "variationValues"):
+        if not isinstance(variation_map, dict):
+            continue
+        for key, raw_values in variation_map.items():
+            label = labels_by_key.get(
+                str(key).casefold(),
+                _variant_label(str(key)),
+            )
+            values = groups.setdefault(label, [])
+            if isinstance(raw_values, list):
+                for value in raw_values:
+                    _add_variant_value(values, value)
+
+    dimensions: list[str] = []
+    for candidate in _json_values_after_key(page_html, "dimensions"):
+        if isinstance(candidate, list) and all(
+            isinstance(item, str) for item in candidate
+        ):
+            dimensions = [str(item) for item in candidate]
+            break
+    if dimensions:
+        for display_map in _json_values_after_key(
+            page_html, "dimensionValuesDisplayData"
+        ):
+            if not isinstance(display_map, dict):
+                continue
+            for raw_values in display_map.values():
+                if not isinstance(raw_values, list):
+                    continue
+                for position, value in enumerate(raw_values[: len(dimensions)]):
+                    key = dimensions[position]
+                    label = labels_by_key.get(key.casefold(), _variant_label(key))
+                    _add_variant_value(groups.setdefault(label, []), value)
+
+    pieces = [
+        f"{label}: {', '.join(values)}"
+        for label, values in groups.items()
+        if label and values
+    ]
+    return " | ".join(pieces[:MAX_VARIANT_GROUPS])
+
+
 def _apply_delivery_text(product: Product, delivery_text: str) -> None:
     delivery_text = _clean_text(delivery_text)
     delivery_lower = delivery_text.lower()
@@ -443,14 +609,18 @@ def _enrich_delivery_from_detail(
     session: requests.Session,
     product: Product,
 ) -> str:
-    """Check a detail page when Cloud search HTML omits delivery promises.
+    """Enrich delivery promises and product variants from one detail request.
 
     Returns ``verified``, ``missing``, ``blocked`` or ``error`` so the caller can
     stop detail requests when Amazon starts throttling the Cloud IP.
     """
     try:
+        detail_url = (
+            f"{AMAZON_BASE_URL}/gp/aw/d/{quote(product.asin, safe='')}"
+            "?th=1&psc=1"
+        )
         response = session.get(
-            product.product_url,
+            detail_url,
             headers={"Referer": f"{AMAZON_BASE_URL}/s?k={quote_plus(product.keyword)}"},
             timeout=DEFAULT_TIMEOUT_SECONDS,
         )
@@ -460,6 +630,7 @@ def _enrich_delivery_from_detail(
     if _looks_blocked(response.text):
         return "blocked"
 
+    product.variants = _extract_variants_from_detail_html(response.text)
     delivery_text = _delivery_text_from_detail_html(response.text)
     if not delivery_text:
         return "missing"
@@ -519,6 +690,7 @@ def _extract_product(card: Tag, keyword: str) -> Product | None:
         delivery_available=False,
         delivery_options="",
         delivery_detail="",
+        variants="",
         image_url=image_url,
         product_url=product_url,
         sponsored=sponsored,
@@ -629,6 +801,7 @@ def scrape_keyword(
             accepted_on_page = 0
             detail_attempts_on_page = 0
             detail_verified_on_page = 0
+            variants_found_on_page = 0
             rejected = {
                 "không đọc được": 0,
                 "trùng ASIN": 0,
@@ -655,6 +828,7 @@ def scrape_keyword(
                     and (product.price is None or product.price > maximum_price)
                 )
                 currency_matches = not only_usd or product.currency == "USD"
+                detail_checked = False
                 needs_delivery_detail = not (
                     product.free_shipping and product.delivery_options
                 )
@@ -671,17 +845,19 @@ def scrape_keyword(
                     if not detail_fallback_announced:
                         _log(
                             log_callback,
-                            "Amazon Cloud không hiển thị đủ thời gian giao trong "
-                            "kết quả tìm kiếm; đang kiểm tra có giới hạn từ "
-                            "trang chi tiết sản phẩm.",
+                            "Đang kiểm tra có giới hạn trang chi tiết để lấy "
+                            "thông tin giao hàng và biến thể sản phẩm.",
                         )
                         detail_fallback_announced = True
                     if detail_requests_made:
                         time.sleep(DETAIL_CHECK_DELAY_SECONDS)
                     detail_status = _enrich_delivery_from_detail(session, product)
+                    detail_checked = True
                     detail_requests_made += 1
                     detail_attempts_on_page += 1
                     detail_checks_remaining -= 1
+                    if product.variants:
+                        variants_found_on_page += 1
                     if detail_status == "verified":
                         detail_verified_on_page += 1
                     elif detail_status in {"blocked", "error"}:
@@ -719,6 +895,37 @@ def scrape_keyword(
                 if only_usd and product.currency != "USD":
                     rejected["không phải USD"] += 1
                     continue
+                if not detail_checked and detail_checks_remaining > 0:
+                    if not detail_fallback_announced:
+                        _log(
+                            log_callback,
+                            "Đang kiểm tra có giới hạn trang chi tiết để lấy "
+                            "biến thể Size/Flavor/Color của sản phẩm.",
+                        )
+                        detail_fallback_announced = True
+                    if detail_requests_made:
+                        time.sleep(DETAIL_CHECK_DELAY_SECONDS)
+                    detail_status = _enrich_delivery_from_detail(session, product)
+                    detail_requests_made += 1
+                    detail_attempts_on_page += 1
+                    detail_checks_remaining -= 1
+                    if product.variants:
+                        variants_found_on_page += 1
+                    if detail_status == "verified":
+                        detail_verified_on_page += 1
+                    elif detail_status in {"blocked", "error"}:
+                        detail_checks_remaining = 0
+                        reason = (
+                            "Amazon yêu cầu CAPTCHA"
+                            if detail_status == "blocked"
+                            else "Amazon trả về lỗi kết nối/503"
+                        )
+                        _log(
+                            log_callback,
+                            f"CẢNH BÁO: Dừng kiểm tra trang chi tiết vì {reason}; "
+                            "các sản phẩm còn lại vẫn được lưu nhưng cột variants "
+                            "có thể để trống.",
+                        )
                 products.append(product)
                 accepted_on_page += 1
                 if len(products) >= max_products:
@@ -734,7 +941,8 @@ def scrape_keyword(
                     log_callback,
                     f"Kiểm tra trang chi tiết: {detail_attempts_on_page} sản phẩm, "
                     f"xác minh được {detail_verified_on_page} sản phẩm FREE + "
-                    "Today/Tomorrow/Overnight.",
+                    "Today/Tomorrow/Overnight, lấy được biến thể cho "
+                    f"{variants_found_on_page} sản phẩm.",
                 )
             rejection_summary = ", ".join(
                 f"{reason}={count}"

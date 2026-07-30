@@ -8,6 +8,7 @@ from amazon_scraper import (
     _delivery_text_from_detail_html,
     _enrich_delivery_from_detail,
     _extract_product,
+    _extract_variants_from_detail_html,
 )
 
 
@@ -73,6 +74,14 @@ class DeliveryParsingTests(unittest.TestCase):
         <div id="mir-layout-DELIVERY_BLOCK">
           Get it Overnight 4 AM - 8 AM
         </div>
+        <div id="variation_size_name">
+          <span class="a-form-label">Size:</span>
+          <span class="selection">12 Count</span>
+          <ul>
+            <li title="Click to select 12 Count"></li>
+            <li title="Click to select 24 Count"></li>
+          </ul>
+        </div>
         """
         card = BeautifulSoup(search_html, "lxml").select_one("[data-asin]")
         product = _extract_product(card, "snack box")
@@ -87,7 +96,43 @@ class DeliveryParsingTests(unittest.TestCase):
         self.assertTrue(product.free_shipping)
         self.assertEqual(product.delivery_options, "Overnight")
         self.assertEqual(product.delivery_detail, "Overnight 4 AM - 8 AM")
-        self.assertEqual(session.requested_urls, ["https://www.amazon.com/dp/B012345678"])
+        self.assertEqual(product.variants, "Size: 12 Count, 24 Count")
+        self.assertEqual(
+            session.requested_urls,
+            ["https://www.amazon.com/gp/aw/d/B012345678?th=1&psc=1"],
+        )
+
+    def test_variant_parser_combines_dom_and_script_dimensions(self) -> None:
+        detail_html = """
+        <div id="variation_size_name">
+          <span class="a-form-label">Size:</span>
+          <span class="selection">12 Count</span>
+          <ul>
+            <li title="Click to select 12 Count"></li>
+            <li title="Click to select 24 Count"></li>
+            <li title="Click to select 36 Count - Currently unavailable."></li>
+          </ul>
+        </div>
+        <script>
+          {
+            "variationDisplayLabels": {
+              "size_name": "Size",
+              "flavor_name": "Flavor"
+            },
+            "variationValues": {
+              "size_name": ["12 Count", "24 Count"],
+              "flavor_name": ["Chocolate", "Vanilla"]
+            }
+          }
+        </script>
+        """
+        self.assertEqual(
+            _extract_variants_from_detail_html(detail_html),
+            (
+                "Size: 12 Count, 24 Count, 36 Count | "
+                "Flavor: Chocolate, Vanilla"
+            ),
+        )
 
 
 if __name__ == "__main__":

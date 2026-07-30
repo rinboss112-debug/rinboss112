@@ -419,6 +419,7 @@ def _results_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
     frame["price"] = pd.to_numeric(frame["price"], errors="coerce")
     frame["delivery_options"] = frame["delivery_options"].fillna("").astype(str)
     frame["delivery_detail"] = frame["delivery_detail"].fillna("").astype(str)
+    frame["variants"] = frame["variants"].fillna("").astype(str)
     for column in (
         "prime",
         "free_shipping",
@@ -750,6 +751,7 @@ def _render_table(frame: pd.DataFrame) -> None:
         "image_url",
         "keyword",
         "title",
+        "variants",
         "price",
         "delivery_detail",
         "rating",
@@ -770,6 +772,9 @@ def _render_table(frame: pd.DataFrame) -> None:
             "image_url": st.column_config.ImageColumn("Ảnh", width="small"),
             "keyword": st.column_config.TextColumn("Ngách", pinned=True),
             "title": st.column_config.TextColumn("Sản phẩm", width="large"),
+            "variants": st.column_config.TextColumn(
+                "Biến thể", width="large"
+            ),
             "price": st.column_config.NumberColumn("Giá", format="$%.2f"),
             "delivery_detail": st.column_config.TextColumn(
                 "Thông tin giao hàng", width="medium"
