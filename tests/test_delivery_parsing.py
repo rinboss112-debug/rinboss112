@@ -5,6 +5,7 @@ import unittest
 from bs4 import BeautifulSoup
 
 from amazon_scraper import (
+    PRODUCT_COLUMNS,
     _delivery_text_from_detail_html,
     _enrich_delivery_from_detail,
     _extract_product,
@@ -31,6 +32,12 @@ class _FakeSession:
 
 
 class DeliveryParsingTests(unittest.TestCase):
+    def test_csv_starts_with_requested_business_columns(self) -> None:
+        self.assertEqual(
+            PRODUCT_COLUMNS[:5],
+            ["title", "image_url", "price", "variants", "delivery_detail"],
+        )
+
     def test_delivery_fallback_handles_new_unknown_html_class(self) -> None:
         html = """
         <div data-asin="B012345678">

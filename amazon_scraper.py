@@ -36,10 +36,14 @@ StopCallback = Callable[[], bool]
 
 @dataclass(slots=True)
 class Product:
+    title: str
+    image_url: str
+    price: float | None
+    variants: str
+    delivery_detail: str
     keyword: str
     asin: str
-    title: str
-    price: float | None
+    product_url: str
     currency: str | None
     rating: float | None
     review_count: int | None
@@ -48,10 +52,6 @@ class Product:
     fast_shipping: bool
     delivery_available: bool
     delivery_options: str
-    delivery_detail: str
-    variants: str
-    image_url: str
-    product_url: str
     sponsored: bool
     scraped_at: str
 

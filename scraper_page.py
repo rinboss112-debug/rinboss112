@@ -748,19 +748,19 @@ def _filter_results(frame: pd.DataFrame) -> pd.DataFrame:
 
 def _render_table(frame: pd.DataFrame) -> None:
     display_columns = [
-        "image_url",
-        "keyword",
         "title",
-        "variants",
+        "image_url",
         "price",
+        "variants",
         "delivery_detail",
+        "keyword",
+        "product_url",
         "rating",
         "review_count",
         "prime",
         "free_shipping",
         "fast_shipping",
         "delivery_available",
-        "product_url",
     ]
     st.dataframe(
         frame,
@@ -769,15 +769,20 @@ def _render_table(frame: pd.DataFrame) -> None:
         row_height=72,
         column_order=display_columns,
         column_config={
+            "title": st.column_config.TextColumn(
+                "Sản phẩm", width="large", pinned=True
+            ),
             "image_url": st.column_config.ImageColumn("Ảnh", width="small"),
-            "keyword": st.column_config.TextColumn("Ngách", pinned=True),
-            "title": st.column_config.TextColumn("Sản phẩm", width="large"),
+            "price": st.column_config.NumberColumn("Giá", format="$%.2f"),
             "variants": st.column_config.TextColumn(
                 "Biến thể", width="large"
             ),
-            "price": st.column_config.NumberColumn("Giá", format="$%.2f"),
             "delivery_detail": st.column_config.TextColumn(
                 "Thông tin giao hàng", width="medium"
+            ),
+            "keyword": st.column_config.TextColumn("Ngách"),
+            "product_url": st.column_config.LinkColumn(
+                "Mở Amazon", display_text="Mở sản phẩm"
             ),
             "rating": st.column_config.NumberColumn("Đánh giá", format="%.1f ⭐"),
             "review_count": st.column_config.NumberColumn("Lượt đánh giá", format="localized"),
@@ -785,9 +790,6 @@ def _render_table(frame: pd.DataFrame) -> None:
             "free_shipping": st.column_config.CheckboxColumn("Free ship"),
             "fast_shipping": st.column_config.CheckboxColumn("Giao nhanh"),
             "delivery_available": st.column_config.CheckboxColumn("Giao được"),
-            "product_url": st.column_config.LinkColumn(
-                "Mở Amazon", display_text="Mở sản phẩm"
-            ),
         },
         key="products_table",
     )
