@@ -16,6 +16,8 @@ Web app Streamlit tiếng Việt để chạy tuần tự nhiều ngách Amazon,
 - Lấy link ảnh gốc, tự bỏ mã resize Amazon như `._AC_UL320_`.
 - Gộp các lựa chọn Size, Flavor, Color, Style, Package Quantity và biến thể khác
   từ trang chi tiết vào một cột CSV `variants`.
+- Loại sản phẩm thuộc Amazon, Amazon Fresh, Amazon Saver, Amazon Grocery và
+  365/365 by Whole Foods Market mà không nhầm với nội dung giao hàng của Amazon.
 - Chỉ nhận sản phẩm vừa có `FREE delivery/free shipping` vừa có `Today`, `Tomorrow` hoặc `Overnight`.
 - Thông tin giao hàng được rút gọn thành nội dung hữu ích như `Overnight 4 AM - 8 AM`, không lấy quảng cáo Prime hay bộ đếm đặt hàng.
 - Có bộ đọc dự phòng khi Amazon đổi class HTML giao hàng và log thống kê từng lý do sản phẩm bị loại.

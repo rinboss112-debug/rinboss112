@@ -60,6 +60,17 @@ class Product:
 
 
 PRODUCT_COLUMNS = [field_name for field_name in Product.__annotations__]
+EXCLUDED_AMAZON_BRAND_PREFIXES = (
+    "amazon",
+    "amazon brand",
+    "amazon fresh",
+    "amazon grocery",
+    "amazon saver",
+    "365 everyday value",
+    "365 food",
+    "365 whole foods",
+    "365 by whole foods",
+)
 WINDOWS_RESERVED_NAMES = {
     "CON",
     "PRN",
@@ -264,6 +275,49 @@ def _set_delivery_zip(
 
 def _clean_text(value: str | None) -> str:
     return re.sub(r"\s+", " ", value or "").strip()
+
+
+def _normalized_brand_text(value: str | None) -> str:
+    normalized = _clean_text(value).casefold().replace("&", " and ")
+    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+    return " ".join(normalized.split())
+
+
+def _card_brand_hint(card: Tag) -> str:
+    """Read only brand-specific card fields, never shipping/seller copy."""
+    hints = [
+        str(card.get("data-brand", "")),
+        str(card.get("data-product-brand", "")),
+    ]
+    for node in card.select(
+        "[data-cy='brand'], [data-component-type='s-product-brand'], "
+        "[class*='brand-name'], [class*='brandName']"
+    ):
+        hints.append(node.get_text(" ", strip=True))
+    return " | ".join(_clean_text(value) for value in hints if _clean_text(value))
+
+
+def _is_excluded_amazon_brand_product(title: str, brand_hint: str = "") -> bool:
+    """Reject Amazon grocery private labels without matching shipping text."""
+    normalized_title = _normalized_brand_text(title)
+    normalized_brand = _normalized_brand_text(brand_hint)
+
+    def matches_brand(value: str) -> bool:
+        return any(
+            value == prefix or value.startswith(f"{prefix} ")
+            for prefix in EXCLUDED_AMAZON_BRAND_PREFIXES
+        )
+
+    if matches_brand(normalized_title) or matches_brand(normalized_brand):
+        return True
+
+    byline_match = re.search(
+        r"\bby\s+(amazon(?:\s+(?:fresh|grocery|saver))?"
+        r"|365(?:\s+by)?\s+whole\s+foods(?:\s+market)?|365\s+food)"
+        r"(?:\s+store)?$",
+        normalized_title,
+    )
+    return byline_match is not None
 
 
 def _select_text(node: Tag, selector: str) -> str:
@@ -805,6 +859,7 @@ def scrape_keyword(
             rejected = {
                 "không đọc được": 0,
                 "trùng ASIN": 0,
+                "brand Amazon/365": 0,
                 "thiếu FREE": 0,
                 "thiếu Today/Tomorrow/Overnight": 0,
                 "ngoài khoảng giá": 0,
@@ -815,6 +870,11 @@ def scrape_keyword(
                 product = _extract_product(card, keyword)
                 if product is None:
                     rejected["không đọc được"] += 1
+                    continue
+                if _is_excluded_amazon_brand_product(
+                    product.title, _card_brand_hint(card)
+                ):
+                    rejected["brand Amazon/365"] += 1
                     continue
                 if product.asin in seen_asins:
                     rejected["trùng ASIN"] += 1

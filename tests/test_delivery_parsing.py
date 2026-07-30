@@ -10,6 +10,7 @@ from amazon_scraper import (
     _enrich_delivery_from_detail,
     _extract_product,
     _extract_variants_from_detail_html,
+    _is_excluded_amazon_brand_product,
 )
 
 
@@ -32,6 +33,38 @@ class _FakeSession:
 
 
 class DeliveryParsingTests(unittest.TestCase):
+    def test_private_label_brand_filter_is_targeted(self) -> None:
+        excluded_titles = (
+            "Amazon Fresh Toaster Pastries, Strawberry, 12 Count",
+            "Amazon Saver Macaroni & Cheese",
+            "Amazon Grocery Peanut Butter",
+            "Amazon Brand - Happy Belly Mixed Nuts",
+            "365 Everyday Value Organic Trail Mix",
+            "365 by Whole Foods Market Organic Granola",
+            "365 Whole Foods Market Sparkling Water",
+        )
+        for title in excluded_titles:
+            with self.subTest(title=title):
+                self.assertTrue(_is_excluded_amazon_brand_product(title))
+
+        self.assertTrue(
+            _is_excluded_amazon_brand_product(
+                "Organic Granola", "Amazon Fresh"
+            )
+        )
+        self.assertFalse(
+            _is_excluded_amazon_brand_product(
+                "Phone stand compatible with Amazon Echo",
+                "Independent Brand",
+            )
+        )
+        self.assertFalse(
+            _is_excluded_amazon_brand_product(
+                "Healthy snack shipped by Amazon tomorrow",
+                "Snack Maker",
+            )
+        )
+
     def test_csv_starts_with_requested_business_columns(self) -> None:
         self.assertEqual(
             PRODUCT_COLUMNS[:5],
