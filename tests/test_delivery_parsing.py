@@ -207,13 +207,10 @@ class DeliveryParsingTests(unittest.TestCase):
         status = _enrich_delivery_from_detail(_FakeSession(detail_html), product)
 
         self.assertEqual(status, "fresh")
-        self.assertIn("Fresh", product.delivery_detail)
-        self.assertIn("2-hour delivery", product.delivery_detail)
-        self.assertIn("Ships from: AmazonFresh", product.delivery_detail)
-        self.assertIn("Sold by: AmazonFresh", product.delivery_detail)
+        self.assertEqual(product.delivery_detail, "")
         self.assertEqual(product.variants, "")
 
-    def test_detail_page_keeps_prime_and_fresh_in_separate_fields(self) -> None:
+    def test_detail_page_keeps_only_prime_when_fresh_is_also_present(self) -> None:
         search_html = """
         <div data-asin="B012345678">
           <h2><a href="/dp/B012345678"><span>Organic Snack Box</span></a></h2>
@@ -234,11 +231,12 @@ class DeliveryParsingTests(unittest.TestCase):
         status = _enrich_delivery_from_detail(_FakeSession(detail_html), product)
 
         self.assertEqual(status, "verified")
-        self.assertIn("Prime member", product.delivery_detail)
-        self.assertIn("Tomorrow", product.delivery_detail)
-        self.assertIn("Fresh", product.delivery_detail)
-        self.assertIn("grocery delivery", product.delivery_detail)
-        self.assertIn("Ships from: AmazonFresh", product.delivery_detail)
+        self.assertEqual(
+            product.delivery_detail,
+            "Prime member | FREE delivery | Tomorrow",
+        )
+        self.assertNotIn("Fresh", product.delivery_detail)
+        self.assertNotIn("AmazonFresh", product.delivery_detail)
 
     def test_detail_page_requires_prime_members_delivery(self) -> None:
         search_html = """
