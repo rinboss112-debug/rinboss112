@@ -72,7 +72,6 @@ class DeliveryParsingTests(unittest.TestCase):
             PRODUCT_COLUMNS[:5],
             ["title", "image_url", "price", "variants", "delivery_detail"],
         )
-        self.assertEqual(PRODUCT_COLUMNS[5], "fresh_shipping")
 
     def test_delivery_fallback_handles_new_unknown_html_class(self) -> None:
         html = """
@@ -90,7 +89,10 @@ class DeliveryParsingTests(unittest.TestCase):
         self.assertIsNotNone(product)
         self.assertTrue(product.free_shipping)
         self.assertEqual(product.delivery_options, "Overnight")
-        self.assertEqual(product.delivery_detail, "Overnight 4 AM - 8 AM")
+        self.assertEqual(
+            product.delivery_detail,
+            "Prime member | FREE delivery | Overnight 4 AM - 8 AM",
+        )
         self.assertTrue(
             _is_prime_member_delivery_text(_combined_delivery_text_from_card(card))
         )
@@ -141,7 +143,10 @@ class DeliveryParsingTests(unittest.TestCase):
         self.assertEqual(status, "verified")
         self.assertTrue(product.free_shipping)
         self.assertEqual(product.delivery_options, "Overnight")
-        self.assertEqual(product.delivery_detail, "Overnight 4 AM - 8 AM")
+        self.assertEqual(
+            product.delivery_detail,
+            "Prime member | FREE delivery | Overnight 4 AM - 8 AM",
+        )
         self.assertEqual(product.variants, "Size: 12 Count")
         self.assertEqual(
             session.requested_urls,
@@ -201,8 +206,11 @@ class DeliveryParsingTests(unittest.TestCase):
 
         status = _enrich_delivery_from_detail(_FakeSession(detail_html), product)
 
-        self.assertEqual(status, "not_prime")
-        self.assertIn("2-hour delivery", product.fresh_shipping)
+        self.assertEqual(status, "fresh")
+        self.assertIn("Fresh", product.delivery_detail)
+        self.assertIn("2-hour delivery", product.delivery_detail)
+        self.assertIn("Ships from: AmazonFresh", product.delivery_detail)
+        self.assertIn("Sold by: AmazonFresh", product.delivery_detail)
         self.assertEqual(product.variants, "")
 
     def test_detail_page_keeps_prime_and_fresh_in_separate_fields(self) -> None:
@@ -226,8 +234,11 @@ class DeliveryParsingTests(unittest.TestCase):
         status = _enrich_delivery_from_detail(_FakeSession(detail_html), product)
 
         self.assertEqual(status, "verified")
-        self.assertEqual(product.delivery_detail, "Tomorrow")
-        self.assertIn("grocery delivery", product.fresh_shipping)
+        self.assertIn("Prime member", product.delivery_detail)
+        self.assertIn("Tomorrow", product.delivery_detail)
+        self.assertIn("Fresh", product.delivery_detail)
+        self.assertIn("grocery delivery", product.delivery_detail)
+        self.assertIn("Ships from: AmazonFresh", product.delivery_detail)
 
     def test_detail_page_requires_prime_members_delivery(self) -> None:
         search_html = """
