@@ -383,6 +383,31 @@ def _delivery_fallback_from_card_text(card_text: str) -> str:
     return _clean_text(match.group(0)) if match else ""
 
 
+def _qualified_delivery_fallback(page_text: str) -> str:
+    """Find a complete qualifying Prime offer when Amazon changes its HTML."""
+    timing = (
+        r"(?:overnight(?:\s+(?:by\s+)?\d{1,2}(?::\d{2})?\s*(?:AM|PM)"
+        r"\s*(?:-|–|—|to)\s*\d{1,2}(?::\d{2})?\s*(?:AM|PM))?"
+        r"|today(?:,\s*(?:[A-Za-z]+\s+)?\d{1,2})?"
+        r"|tomorrow(?:,\s*(?:[A-Za-z]+\s+)?\d{1,2})?)"
+    )
+    patterns = (
+        rf"\b(?:or\s+)?prime\s+members?\s+(?:can\s+)?(?:get\s+)?"
+        rf"free\s+(?:delivery|shipping)\s+{timing}",
+        rf"\bfree\s+(?:delivery|shipping)\s+{timing}"
+        rf".{{0,160}}?\bwith\s+prime(?:\s+members?)?\b",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, page_text, flags=re.IGNORECASE)
+        if match:
+            return (
+                _clean_text(match.group(0))
+                .replace("–", "-")
+                .replace("—", "-")
+            )
+    return ""
+
+
 def _combined_delivery_text_from_card(card: Tag) -> str:
     card_text = _clean_text(card.get_text(" ", strip=True))
     delivery_text = _extract_delivery_text(card)
@@ -390,6 +415,14 @@ def _combined_delivery_text_from_card(card: Tag) -> str:
     if fallback_delivery and fallback_delivery.casefold() not in delivery_text.casefold():
         delivery_text = " | ".join(
             value for value in (delivery_text, fallback_delivery) if value
+        )
+    qualified_fallback = _qualified_delivery_fallback(card_text)
+    if (
+        qualified_fallback
+        and qualified_fallback.casefold() not in delivery_text.casefold()
+    ):
+        delivery_text = " | ".join(
+            value for value in (delivery_text, qualified_fallback) if value
         )
     return delivery_text
 
@@ -489,6 +522,14 @@ def _delivery_text_from_detail_html(page_html: str) -> str:
     fallback = _delivery_fallback_from_card_text(full_text)
     if fallback and fallback.casefold() not in combined.casefold():
         combined = " | ".join(value for value in (combined, fallback) if value)
+    qualified_fallback = _qualified_delivery_fallback(full_text)
+    if (
+        qualified_fallback
+        and qualified_fallback.casefold() not in combined.casefold()
+    ):
+        combined = " | ".join(
+            value for value in (combined, qualified_fallback) if value
+        )
     return combined
 
 
@@ -741,7 +782,7 @@ def _extract_fresh_shipping_text(
 
 
 def _shipping_detail_text(delivery_text: str) -> str:
-    """Return readable shipping copy without requiring Prime or fast delivery."""
+    """Return readable shipping offers without losing their qualifying words."""
     cleaned = _clean_text(delivery_text)
     if not cleaned:
         return ""
@@ -751,44 +792,83 @@ def _shipping_detail_text(delivery_text: str) -> str:
         for segment in re.split(r"\s*\|\s*", cleaned)
         if _clean_text(segment)
     ]
-    meaningful = [
+    strong_segments = [
         segment
         for segment in segments
         if re.search(
-            r"\b(?:delivery|shipping|arrives?|today|tomorrow|overnight)\b",
+            r"\b(?:delivery|shipping|arrives?)\b",
             segment,
             flags=re.IGNORECASE,
         )
     ]
-    candidates = meaningful or segments
+    candidates = strong_segments or segments
+
+    def score(value: str) -> int:
+        lowered = value.casefold()
+        return (
+            (8 if _is_prime_member_delivery_text(value) else 0)
+            + (
+                4
+                if "free delivery" in lowered or "free shipping" in lowered
+                else 0
+            )
+            + (4 if _extract_delivery_options(value) else 0)
+            + (
+                1
+                if re.search(
+                    r"\b(?:delivery|shipping|arrives?)\b",
+                    value,
+                    flags=re.IGNORECASE,
+                )
+                else 0
+            )
+        )
+
     details: list[str] = []
     for candidate in candidates:
         key = candidate.casefold()
         if any(key == existing.casefold() for existing in details):
             continue
-        if any(existing.casefold() in key for existing in details):
-            continue
-        details = [
-            existing
-            for existing in details
-            if key not in existing.casefold()
+        overlapping = [
+            index
+            for index, existing in enumerate(details)
+            if key in existing.casefold() or existing.casefold() in key
         ]
+        if overlapping:
+            best_existing = max(
+                (details[index] for index in overlapping),
+                key=lambda value: (score(value), -len(value)),
+            )
+            if (score(candidate), -len(candidate)) <= (
+                score(best_existing),
+                -len(best_existing),
+            ):
+                continue
+            details = [
+                existing
+                for index, existing in enumerate(details)
+                if index not in overlapping
+            ]
         details.append(candidate)
     return " | ".join(details)[:600]
 
 
-def _prime_shipping_text(delivery_text: str) -> str:
-    if not _is_prime_member_delivery_text(delivery_text):
-        return ""
-    pieces = ["Prime member"]
-    if "free delivery" in delivery_text.casefold():
-        pieces.append("FREE delivery")
-    elif "free shipping" in delivery_text.casefold():
-        pieces.append("FREE shipping")
-    detail = _extract_delivery_detail(delivery_text)
-    if detail:
-        pieces.append(detail)
-    return " | ".join(pieces)
+def _qualified_prime_shipping_text(delivery_text: str) -> str:
+    """Return one offer containing Prime, FREE and an accepted fast time."""
+    for raw_segment in re.split(r"\s*\|\s*", _clean_text(delivery_text)):
+        segment = _clean_text(raw_segment)
+        lowered = segment.casefold()
+        if (
+            segment
+            and _is_prime_member_delivery_text(segment)
+            and (
+                "free delivery" in lowered
+                or "free shipping" in lowered
+            )
+            and _extract_delivery_options(segment)
+        ):
+            return segment
+    return ""
 
 
 def _apply_delivery_text(product: Product, delivery_text: str) -> None:
@@ -813,8 +893,8 @@ def _enrich_delivery_from_detail(
     """Enrich delivery promises and product variants from one detail request.
 
     Returns ``enriched``, ``fresh``, ``missing``, ``blocked`` or ``error``.
-    Fresh offers are rejected by the caller; all other readable shipping copy
-    is preserved without requiring Prime, FREE or fast-delivery wording.
+    The caller rejects Fresh and accepts only one shipping line containing
+    Prime, FREE and Today/Tomorrow/Overnight.
     """
     try:
         detail_url = (
@@ -965,10 +1045,7 @@ def scrape_keyword(
 
     products: list[Product] = []
     seen_asins: set[str] = set()
-    detail_checks_remaining = min(
-        MAX_DETAIL_CHECKS_PER_NICHE,
-        max(6, max_products * 3),
-    )
+    detail_checks_remaining = MAX_DETAIL_CHECKS_PER_NICHE
     detail_fallback_announced = False
     detail_requests_made = 0
     session = _build_session()
@@ -1007,6 +1084,7 @@ def scrape_keyword(
                 "trùng ASIN": 0,
                 "brand Amazon/365": 0,
                 "ship Fresh": 0,
+                "thiếu Prime + FREE + Today/Tomorrow/Overnight cùng dòng": 0,
                 "ngoài khoảng giá": 0,
                 "không giao được": 0,
                 "không phải USD": 0,
@@ -1077,21 +1155,28 @@ def scrape_keyword(
                         _log(
                             log_callback,
                             f"CẢNH BÁO: Dừng kiểm tra trang chi tiết vì {reason}; "
-                            "các sản phẩm không phải Fresh vẫn được lưu; thông tin "
-                            "ship và variants có thể để trống.",
+                            "chỉ các sản phẩm có đủ điều kiện ngay trên trang tìm "
+                            "kiếm mới tiếp tục được lưu.",
                         )
                 if fresh_delivery_detected:
                     rejected["ship Fresh"] += 1
                     continue
+                qualified_shipping = _qualified_prime_shipping_text(
+                    product.delivery_detail
+                )
+                if not qualified_shipping:
+                    rejected[
+                        "thiếu Prime + FREE + Today/Tomorrow/Overnight cùng dòng"
+                    ] += 1
+                    continue
+                _apply_delivery_text(product, qualified_shipping)
+                product.prime = True
                 if (
                     only_deliverable
-                    and product.delivery_detail
                     and not product.delivery_available
                 ):
                     rejected["không giao được"] += 1
                     continue
-                if not product.delivery_detail:
-                    product.delivery_detail = "Không thấy thông tin ship"
                 products.append(product)
                 accepted_on_page += 1
                 if len(products) >= max_products:

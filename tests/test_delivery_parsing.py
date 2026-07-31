@@ -13,6 +13,8 @@ from amazon_scraper import (
     _extract_variants_from_detail_html,
     _is_excluded_amazon_brand_product,
     _is_prime_member_delivery_text,
+    _qualified_delivery_fallback,
+    _qualified_prime_shipping_text,
 )
 
 
@@ -263,6 +265,39 @@ class DeliveryParsingTests(unittest.TestCase):
             "on orders over $100 with Prime"
         )
         self.assertTrue(_is_prime_member_delivery_text(delivery_text))
+        self.assertEqual(
+            _qualified_prime_shipping_text(delivery_text),
+            delivery_text,
+        )
+
+    def test_qualified_shipping_requires_all_terms_on_same_line(self) -> None:
+        delivery_text = (
+            "Or Prime members get FREE delivery Saturday, August 1 "
+            "| Overnight 7 AM - 11 AM"
+        )
+        self.assertEqual(_qualified_prime_shipping_text(delivery_text), "")
+
+    def test_qualified_shipping_accepts_prime_members_overnight(self) -> None:
+        delivery_text = (
+            "Or Prime members get FREE delivery Overnight 7 AM - 11 AM "
+            "on eligible orders."
+        )
+        self.assertEqual(
+            _qualified_prime_shipping_text(delivery_text),
+            delivery_text,
+        )
+
+    def test_qualified_fallback_reads_offer_from_full_page_text(self) -> None:
+        page_text = (
+            "Get Fast, Free Shipping with Amazon Prime "
+            "FREE delivery Tuesday on orders over $35. "
+            "Or Prime members get FREE delivery Tomorrow, July 31. "
+            "Order within 2 hrs. Join Prime."
+        )
+        self.assertEqual(
+            _qualified_delivery_fallback(page_text),
+            "Or Prime members get FREE delivery Tomorrow, July 31",
+        )
 
 
 if __name__ == "__main__":

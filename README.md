@@ -18,10 +18,10 @@ Web app Streamlit tiếng Việt để chạy tuần tự nhiều ngách Amazon,
   tiêu đề sản phẩm, không liệt kê toàn bộ lựa chọn của trang chi tiết.
 - Loại sản phẩm thuộc Amazon, Amazon Fresh, Amazon Saver, Amazon Grocery và
   365/365 by Whole Foods Market mà không nhầm với nội dung giao hàng của Amazon.
-- Chỉ loại sản phẩm khi thông tin giao hàng hoặc người bán/gửi hàng có chữ
-  `Fresh`; các kiểu ship còn lại vẫn được giữ.
-- Cột `delivery_detail` ghi rõ nội dung giao hàng Amazon đọc được, không bắt
-  buộc phải có Prime, FREE hoặc Today/Tomorrow/Overnight.
+- Chỉ nhận sản phẩm có cùng một dòng giao hàng chứa `Prime/Prime members`,
+  `FREE delivery/free shipping` và `Today/Tomorrow/Overnight`.
+- Có chữ `Fresh` trong thông tin giao hàng hoặc người bán/gửi hàng là loại.
+- Cột `delivery_detail` ghi nguyên dòng ship đã đáp ứng đủ điều kiện.
 - Có bộ đọc dự phòng khi Amazon đổi class HTML giao hàng và log thống kê từng lý do sản phẩm bị loại.
 - Đồng bộ CSV lên Google Drive ngay sau từng ngách.
 - Cuối phiên tạo `manifest.json` và ZIP, đồng bộ cả hai lên Drive.
