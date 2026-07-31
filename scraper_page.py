@@ -737,17 +737,17 @@ def _filter_results(frame: pd.DataFrame) -> pd.DataFrame:
             key="result_currency",
         )
         numeric_row = st.columns(3, vertical_alignment="bottom")
+        st.session_state.setdefault("result_minimum", 0.0)
+        st.session_state.setdefault("result_maximum", 0.0)
         filter_minimum = numeric_row[0].number_input(
             "Giá từ",
             min_value=0.0,
-            value=0.0,
             step=1.0,
             key="result_minimum",
         )
         filter_maximum = numeric_row[1].number_input(
             "Giá đến (0 = không giới hạn)",
             min_value=0.0,
-            value=0.0,
             step=1.0,
             key="result_maximum",
         )
@@ -1098,14 +1098,31 @@ with st.sidebar:
     keywords = _collect_keywords(uploaded_file, direct_text)
     st.caption(f"Đã nhận {len(keywords)} ngách duy nhất.")
 
-    minimum_price_input = 0.0
-    maximum_price_input = 0.0
+    st.session_state.setdefault("minimum_price", 0.0)
+    st.session_state.setdefault("maximum_price", 0.0)
+    price_columns = st.columns(2)
+    minimum_price_input = price_columns[0].number_input(
+        "Giá thấp nhất",
+        min_value=0.0,
+        step=1.0,
+        key="minimum_price",
+    )
+    maximum_price_input = price_columns[1].number_input(
+        "Giá cao nhất",
+        min_value=0.0,
+        step=1.0,
+        key="maximum_price",
+    )
     only_deliverable = False
     only_usd = False
     st.info(
         "Tool sẽ giữ mọi sản phẩm đọc được. Giá, tiền tệ, Prime, Fresh và "
         "vận chuyển được lọc sau khi cào; file dữ liệu gốc không bị mất dòng.",
         icon=":material/filter_alt:",
+    )
+    st.caption(
+        "Giá trên đây sẽ được áp dụng sẵn cho bảng và nút tải phần đang lọc. "
+        "Để 0 nếu không muốn giới hạn."
     )
 
     st.session_state.setdefault("max_pages", 2)
@@ -1196,6 +1213,8 @@ with st.sidebar:
         validation_error = "Vui lòng nhập ZIP Code."
     elif not keywords:
         validation_error = "Vui lòng tải file TXT hoặc nhập ít nhất một ngách."
+    elif maximum_price_input > 0 and minimum_price_input > maximum_price_input:
+        validation_error = "Giá thấp nhất không được lớn hơn giá cao nhất."
     elif access_identity and len(keywords) > access_identity["max_keywords_per_run"]:
         validation_error = (
             "Bạn chỉ được chạy tối đa "
@@ -1214,6 +1233,8 @@ with st.sidebar:
         if validation_error:
             st.error(validation_error, icon=":material/error:")
         else:
+            st.session_state["result_minimum"] = float(minimum_price_input)
+            st.session_state["result_maximum"] = float(maximum_price_input)
             if access_identity:
                 try:
                     allowed, access_message = access_store.reserve_run(
