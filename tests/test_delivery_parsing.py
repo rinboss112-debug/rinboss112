@@ -9,21 +9,33 @@ from amazon_scraper import (
     PRODUCT_COLUMNS,
     _combined_delivery_text_from_card,
     _extract_product,
+    _find_search_cards,
     _is_excluded_amazon_brand_product,
     _is_prime_member_delivery_text,
     _qualified_delivery_fallback,
     _qualified_fast_free_shipping_text,
     _shipping_detail_text,
+    _zero_search_page_error,
     scrape_keyword,
 )
 
 
 class _FakeResponse:
-    def __init__(self, text: str) -> None:
+    def __init__(
+        self,
+        text: str,
+        *,
+        status_code: int = 200,
+        url: str = "https://www.amazon.com/s?k=test",
+    ) -> None:
         self.text = text
+        self.content = text.encode()
+        self.status_code = status_code
+        self.url = url
 
     def raise_for_status(self) -> None:
-        return None
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
 
 
 class _FakeSession:
@@ -33,7 +45,7 @@ class _FakeSession:
 
     def get(self, url: str, **_kwargs: object) -> _FakeResponse:
         self.requested_urls.append(url)
-        return _FakeResponse(self.text)
+        return _FakeResponse(self.text, url=url)
 
     def close(self) -> None:
         return None
@@ -116,6 +128,36 @@ class DeliveryParsingTests(unittest.TestCase):
             "Prime member | FREE delivery | Tomorrow, August 1",
         )
 
+    def test_fallback_card_layout_derives_asin_from_product_link(self) -> None:
+        html = """
+        <html><head><title>Amazon search</title></head><body>
+          <div class="s-result-item">
+            <a href="/dp/B07CBKMHSW/ref=sr_1_1">
+              <h2><span>Snack Gift Box</span></h2>
+            </a>
+            <span data-csa-c-delivery-price="FREE"
+                  data-csa-c-delivery-time="Today 2 PM – 6 PM">
+              Join Prime to get FREE delivery Today 2 PM – 6 PM
+            </span>
+          </div>
+        </body></html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        cards = _find_search_cards(soup)
+
+        self.assertEqual(len(cards), 1)
+        product = _extract_product(cards[0], "snack")
+        self.assertIsNotNone(product)
+        self.assertEqual(product.asin, "B07CBKMHSW")
+        self.assertEqual(
+            product.product_url,
+            "https://www.amazon.com/dp/B07CBKMHSW",
+        )
+        self.assertEqual(
+            product.delivery_detail,
+            "Prime member | FREE delivery | Today 2 PM - 6 PM",
+        )
+
     def test_search_card_keeps_fresh_shipping_in_shared_delivery_column(
         self,
     ) -> None:
@@ -139,6 +181,30 @@ class DeliveryParsingTests(unittest.TestCase):
             "Fresh | Ships from: AmazonFresh | Sold by: AmazonFresh",
         )
         self.assertTrue(product.delivery_available)
+
+    def test_fresh_shipping_takes_precedence_over_prime_wording(self) -> None:
+        html = """
+        <div data-asin="B012345678">
+          <h2><span>Organic Grocery Snack</span></h2>
+          <div data-cy="delivery-recipe">
+            FREE 2-hour delivery on orders over $100 with Prime
+            Ships from AmazonFresh
+            Sold by AmazonFresh
+            Join Prime to get FREE delivery Today 2 PM - 6 PM
+          </div>
+        </div>
+        """
+        card = BeautifulSoup(html, "lxml").select_one("[data-asin]")
+        product = _extract_product(card, "snack")
+
+        self.assertIsNotNone(product)
+        self.assertEqual(
+            product.delivery_detail,
+            "Fresh | Ships from: AmazonFresh | Sold by: AmazonFresh",
+        )
+        self.assertFalse(product.prime)
+        self.assertFalse(product.fast_shipping)
+        self.assertEqual(product.delivery_options, "")
 
     def test_shipping_detail_never_uses_variant_or_snap_text(self) -> None:
         incorrect_texts = (
@@ -270,6 +336,74 @@ class DeliveryParsingTests(unittest.TestCase):
         self.assertTrue(
             any("không mở trang chi tiết" in message for message in logs)
         )
+
+    def test_scrape_keyword_reports_robot_check_instead_of_zero_products(
+        self,
+    ) -> None:
+        blocked_html = """
+        <html><head><title>Robot Check</title></head>
+        <body>
+          <form action="/errors/validateCaptcha">
+            <input name="captchacharacters">
+          </form>
+        </body></html>
+        """
+        fake_session = _FakeSession(blocked_html)
+        logs: list[str] = []
+        with (
+            patch("amazon_scraper._build_session", return_value=fake_session),
+            patch("amazon_scraper._set_delivery_zip"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "CAPTCHA/Robot Check"):
+                scrape_keyword(
+                    keyword="Snack Food Gifts",
+                    zip_code="92704",
+                    minimum_price=None,
+                    maximum_price=None,
+                    max_pages=1,
+                    max_products=10,
+                    only_deliverable=False,
+                    log_callback=logs.append,
+                )
+
+        self.assertTrue(
+            any("Chẩn đoán trang Amazon" in message for message in logs)
+        )
+
+    def test_amazon_sorry_page_is_classified_as_an_error(self) -> None:
+        html = """
+        <html><head><title>Sorry! Something went wrong!</title></head>
+        <body>Please try again later.</body></html>
+        """
+        response = _FakeResponse(html)
+        soup = BeautifulSoup(html, "lxml")
+
+        self.assertEqual(
+            _zero_search_page_error(response, soup),
+            "Amazon trả trang lỗi hoặc nội dung rỗng thay vì kết quả tìm kiếm.",
+        )
+
+    def test_scrape_keyword_accepts_explicit_empty_search(self) -> None:
+        empty_html = """
+        <html><head><title>Amazon.com: No results</title></head>
+        <body>No results for unusually-specific-niche</body></html>
+        """
+        fake_session = _FakeSession(empty_html)
+        with (
+            patch("amazon_scraper._build_session", return_value=fake_session),
+            patch("amazon_scraper._set_delivery_zip"),
+        ):
+            products = scrape_keyword(
+                keyword="unusually-specific-niche",
+                zip_code="92704",
+                minimum_price=None,
+                maximum_price=None,
+                max_pages=1,
+                max_products=10,
+                only_deliverable=False,
+            )
+
+        self.assertEqual(products, [])
 
 
 if __name__ == "__main__":

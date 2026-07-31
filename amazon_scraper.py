@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
-from urllib.parse import quote, quote_plus, urljoin
+from urllib.parse import quote, quote_plus, urljoin, urlparse
 
 import pandas as pd
 import requests
@@ -25,11 +25,16 @@ from urllib3.util.retry import Retry
 AMAZON_BASE_URL = "https://www.amazon.com"
 DEFAULT_TIMEOUT_SECONDS = 30
 DEFAULT_DELAY_SECONDS = 1.25
+ASIN_PATTERN = re.compile(r"^[A-Z0-9]{10}$", flags=re.IGNORECASE)
 
 LogCallback = Callable[[str], None]
 ProgressCallback = Callable[[int, int, str, str, int], None]
 ResultCallback = Callable[[str, list["Product"], list["Product"]], None]
 StopCallback = Callable[[], bool]
+
+
+class AmazonAccessError(RuntimeError):
+    """Amazon returned a block/interstitial instead of usable product data."""
 
 
 @dataclass(slots=True)
@@ -357,15 +362,26 @@ def _parse_price(card: Tag) -> tuple[float | None, str | None]:
 def _extract_delivery_text(card: Tag) -> str:
     selectors = (
         "[data-cy='delivery-recipe']",
+        "[data-cy='shipping-recipe']",
         ".s-delivery-instructions-style",
-        ".a-row.a-size-base.a-color-secondary",
+        "[data-csa-c-delivery-time]",
+        "[data-csa-c-delivery-price]",
+        "[data-csa-c-content-id*='delivery']",
+        "[data-csa-c-content-id*='shipping']",
     )
     pieces: list[str] = []
     for selector in selectors:
         for node in card.select(selector):
-            text = _clean_text(node.get_text(" ", strip=True))
-            if text and text not in pieces:
-                pieces.append(text)
+            values = (
+                node.get_text(" ", strip=True),
+                str(node.get("data-csa-c-delivery-price", "")),
+                str(node.get("data-csa-c-delivery-time", "")),
+                str(node.get("aria-label", "")),
+            )
+            for value in values:
+                text = _clean_text(value)
+                if text and text not in pieces:
+                    pieces.append(text)
     return " | ".join(pieces)
 
 
@@ -429,6 +445,167 @@ def _combined_delivery_text_from_card(card: Tag) -> str:
             value for value in (delivery_text, qualified_fallback) if value
         )
     return delivery_text
+
+
+def _asin_from_card(card: Tag) -> str:
+    """Read a valid ASIN from card attributes or a product link."""
+    for attribute in ("data-asin", "data-csa-c-asin"):
+        asin = _clean_text(str(card.get(attribute, ""))).upper()
+        if ASIN_PATTERN.fullmatch(asin):
+            return asin
+
+    for link in card.select("a[href*='/dp/'], a[href*='/gp/product/']"):
+        href = str(link.get("href", ""))
+        match = re.search(
+            r"/(?:dp|gp/product)/([A-Z0-9]{10})(?:[/?#]|$)",
+            href,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            return match.group(1).upper()
+    return ""
+
+
+def _find_search_cards(soup: BeautifulSoup) -> list[Tag]:
+    """Find product cards across known Amazon search-result layouts."""
+    selectors = (
+        "[data-component-type='s-search-result'][data-asin]",
+        "div.s-result-item[data-asin]",
+        "[data-cel-widget^='search_result_'][data-asin]",
+        "[data-csa-c-type='item'][data-asin]",
+        "[data-csa-c-asin]",
+    )
+    candidates: list[Tag] = []
+    seen_nodes: set[int] = set()
+    for selector in selectors:
+        for node in soup.select(selector):
+            if not isinstance(node, Tag) or id(node) in seen_nodes:
+                continue
+            seen_nodes.add(id(node))
+            candidates.append(node)
+
+    if not candidates:
+        for link in soup.select("a[href*='/dp/'], a[href*='/gp/product/']"):
+            card = link.find_parent(attrs={"data-asin": True})
+            if card is None:
+                card = link.find_parent(class_="s-result-item")
+            if isinstance(card, Tag) and id(card) not in seen_nodes:
+                seen_nodes.add(id(card))
+                candidates.append(card)
+
+    cards: list[Tag] = []
+    seen_asins: set[str] = set()
+    for card in candidates:
+        asin = _asin_from_card(card)
+        title = (
+            _select_text(card, "[data-cy='title-recipe'] h2")
+            or _select_text(card, "h2 span")
+            or _select_text(card, "h2")
+            or _select_text(card, "[data-cy='title-recipe']")
+        )
+        if asin and title and asin not in seen_asins:
+            seen_asins.add(asin)
+            cards.append(card)
+    return cards
+
+
+def _search_page_counts(soup: BeautifulSoup) -> dict[str, int]:
+    return {
+        "primary": len(
+            soup.select("[data-component-type='s-search-result'][data-asin]")
+        ),
+        "result_items": len(soup.select(".s-result-item[data-asin]")),
+        "asin": len(
+            [
+                node
+                for node in soup.select("[data-asin]")
+                if _clean_text(str(node.get("data-asin", "")))
+            ]
+        ),
+        "product_links": len(
+            soup.select("a[href*='/dp/'], a[href*='/gp/product/']")
+        ),
+    }
+
+
+def _search_page_diagnostic(
+    response: requests.Response,
+    soup: BeautifulSoup,
+    cards: Sequence[Tag],
+) -> str:
+    status = getattr(response, "status_code", "?")
+    final_url = str(getattr(response, "url", "") or "")
+    parsed_url = urlparse(final_url)
+    destination = f"{parsed_url.netloc}{parsed_url.path}" if final_url else "không rõ"
+    content = getattr(response, "content", b"")
+    size = len(content) if content else len(str(getattr(response, "text", "")).encode())
+    title = _select_text(soup, "title")[:100] or "không có tiêu đề"
+    counts = _search_page_counts(soup)
+    return (
+        f"HTTP {status}; đích={destination}; bytes={size}; title={title!r}; "
+        f"thẻ chuẩn={counts['primary']}; thẻ dự phòng={counts['result_items']}; "
+        f"ASIN={counts['asin']}; link sản phẩm={counts['product_links']}; "
+        f"thẻ dùng được={len(cards)}"
+    )
+
+
+def _is_explicit_no_results(page_text: str) -> bool:
+    lowered = page_text.casefold()
+    return any(
+        marker in lowered
+        for marker in (
+            "no results for",
+            "did not match any products",
+            "try checking your spelling or use more general terms",
+        )
+    )
+
+
+def _zero_search_page_error(
+    response: requests.Response,
+    soup: BeautifulSoup,
+) -> str | None:
+    """Classify a card-less response; None means a genuine empty search."""
+    page_text = str(getattr(response, "text", "") or "")
+    if _is_explicit_no_results(page_text):
+        return None
+    if _looks_blocked(page_text):
+        return (
+            "Amazon trả trang CAPTCHA/Robot Check thay vì kết quả tìm kiếm. "
+            "IP máy chủ hiện đang bị giới hạn."
+        )
+
+    final_url = str(getattr(response, "url", "") or "")
+    parsed_url = urlparse(final_url)
+    lowered_path = parsed_url.path.casefold()
+    if "consent" in parsed_url.netloc.casefold() or "consent" in lowered_path:
+        return "Amazon chuyển phiên cào sang trang đồng ý cookie."
+    if lowered_path.startswith("/ap/signin"):
+        return "Amazon chuyển phiên cào sang trang đăng nhập."
+    if parsed_url.netloc and parsed_url.netloc.casefold() not in {
+        "amazon.com",
+        "www.amazon.com",
+    }:
+        return f"Amazon chuyển sang tên miền ngoài dự kiến: {parsed_url.netloc}."
+
+    counts = _search_page_counts(soup)
+    if counts["asin"] or counts["product_links"]:
+        return (
+            "Amazon đã thay đổi cấu trúc HTML; tìm thấy dấu hiệu sản phẩm "
+            "nhưng chưa ghép được thành thẻ hợp lệ."
+        )
+
+    title = _select_text(soup, "title")
+    if not title or re.search(
+        r"\b(?:sorry|problem|error|service unavailable)\b",
+        title,
+        flags=re.IGNORECASE,
+    ):
+        return "Amazon trả trang lỗi hoặc nội dung rỗng thay vì kết quả tìm kiếm."
+    return (
+        "Amazon không trả HTML kết quả tìm kiếm chuẩn cho phiên máy chủ này. "
+        "Đây thường là giới hạn IP Cloud hoặc trang trung gian của Amazon."
+    )
 
 
 def _canonical_product_url(asin: str) -> str:
@@ -904,8 +1081,13 @@ def _apply_delivery_text(product: Product, delivery_text: str) -> None:
 
 
 def _extract_product(card: Tag, keyword: str) -> Product | None:
-    asin = _clean_text(card.get("data-asin"))
-    title = _select_text(card, "h2 span") or _select_text(card, "h2")
+    asin = _asin_from_card(card)
+    title = (
+        _select_text(card, "[data-cy='title-recipe'] h2")
+        or _select_text(card, "h2 span")
+        or _select_text(card, "h2")
+        or _select_text(card, "[data-cy='title-recipe']")
+    )
     if not asin or not title:
         return None
 
@@ -944,16 +1126,16 @@ def _extract_product(card: Tag, keyword: str) -> Product | None:
         sponsored=sponsored,
         scraped_at=datetime.now().isoformat(timespec="seconds"),
     )
-    _apply_delivery_text(product, delivery_text)
     fresh_shipping = _extract_fresh_shipping_text(delivery_text, str(card))
     if fresh_shipping:
-        if fresh_shipping.casefold() not in product.delivery_detail.casefold():
-            product.delivery_detail = " | ".join(
-                value
-                for value in (product.delivery_detail, fresh_shipping)
-                if value
-            )
+        product.delivery_detail = fresh_shipping
+        product.delivery_options = ""
         product.delivery_available = True
+        product.free_shipping = "free" in delivery_text.casefold()
+        product.fast_shipping = False
+        product.prime = False
+    else:
+        _apply_delivery_text(product, delivery_text)
     return product
 
 
@@ -963,8 +1145,13 @@ def _looks_blocked(page_text: str) -> bool:
         marker in lowered
         for marker in (
             "enter the characters you see below",
+            "type the characters you see in this image",
             "sorry, we just need to make sure you're not a robot",
             "automated access to amazon data",
+            "robot check",
+            "validatecaptcha",
+            "captchacharacters",
+            "opfcaptcha",
         )
     )
 
@@ -983,8 +1170,15 @@ def test_amazon_connection(zip_code: str) -> tuple[bool, str]:
             timeout=DEFAULT_TIMEOUT_SECONDS,
         )
         response.raise_for_status()
-        if _looks_blocked(response.text):
-            return False, "Amazon đang yêu cầu CAPTCHA hoặc chặn IP hiện tại."
+        soup = BeautifulSoup(response.text, "lxml")
+        cards = _find_search_cards(soup)
+        if not cards:
+            page_error = _zero_search_page_error(response, soup)
+            if page_error:
+                return False, (
+                    f"{page_error} Chẩn đoán: "
+                    f"{_search_page_diagnostic(response, soup, cards)}."
+                )
         location_note = "ZIP đã được xác nhận" if zip_applied else "ZIP chưa được xác nhận"
         return True, f"Kết nối Amazon thành công; {location_note}."
     except requests.RequestException as error:
@@ -1041,19 +1235,37 @@ def scrape_keyword(
                 f"{AMAZON_BASE_URL}/s?k={quote_plus(keyword)}&page={page_number}"
             )
             _log(log_callback, f"Đang đọc trang {page_number}/{max_pages}...")
-            response = session.get(search_url, timeout=DEFAULT_TIMEOUT_SECONDS)
-            response.raise_for_status()
-            if _looks_blocked(response.text):
-                raise RuntimeError(
-                    "Amazon yêu cầu xác minh CAPTCHA hoặc đã chặn truy cập tự động."
+            try:
+                response = session.get(
+                    search_url,
+                    headers={"Referer": f"{AMAZON_BASE_URL}/"},
+                    timeout=DEFAULT_TIMEOUT_SECONDS,
                 )
+                response.raise_for_status()
+            except requests.RequestException as error:
+                _log(
+                    log_callback,
+                    "Amazon không trả được trang tìm kiếm: "
+                    f"{type(error).__name__}: {error}",
+                )
+                if re.search(r"\b(?:429|503)\b|too many .* responses", str(error)):
+                    raise AmazonAccessError(
+                        "Amazon đang giới hạn IP máy chủ (HTTP 429/503)."
+                    ) from error
+                raise
 
             soup = BeautifulSoup(response.text, "lxml")
-            cards = soup.select(
-                "[data-component-type='s-search-result'][data-asin]"
-            )
+            cards = _find_search_cards(soup)
             if not cards:
-                _log(log_callback, "Không tìm thấy thẻ sản phẩm ở trang này; dừng ngách.")
+                diagnostic = _search_page_diagnostic(response, soup, cards)
+                _log(log_callback, f"Chẩn đoán trang Amazon: {diagnostic}.")
+                page_error = _zero_search_page_error(response, soup)
+                if page_error:
+                    raise AmazonAccessError(page_error)
+                _log(
+                    log_callback,
+                    "Amazon xác nhận không có kết quả cho ngách này; dừng ngách.",
+                )
                 break
 
             accepted_on_page = 0
@@ -1156,6 +1368,7 @@ def scrape_keywords(
 
         status = "success"
         niche_products: list[Product] = []
+        access_blocked = False
         try:
             niche_products = scrape_keyword(
                 keyword=keyword,
@@ -1187,6 +1400,7 @@ def scrape_keywords(
                 result_callback(keyword, list(niche_products), list(all_products))
         except Exception as error:
             status = "error"
+            access_blocked = isinstance(error, AmazonAccessError)
             _append_error(output_dir, keyword, error, log_callback)
             _log(log_callback, f"LỖI ngách '{keyword}': {error}")
         finally:
@@ -1195,6 +1409,14 @@ def scrape_keywords(
                     progress_callback(index, total, keyword, status, len(niche_products))
                 except Exception:
                     pass
+
+        if access_blocked:
+            _log(
+                log_callback,
+                "Đã dừng các ngách còn lại vì Amazon đang chặn hoặc không trả "
+                "trang kết quả chuẩn. Hãy chờ rồi thử lại từ kết nối khác.",
+            )
+            break
 
         if stop_requested_callback and stop_requested_callback():
             _log(log_callback, "Đã hoàn tất ngách hiện tại và dừng theo yêu cầu.")

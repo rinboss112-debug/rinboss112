@@ -188,6 +188,25 @@ Tool giữ nguyên các cột cũ và thêm `image_url_1` đến `image_url_5` c
 `._AC_UL320_`. Nếu sản phẩm có ít hơn 5 ảnh thì trạng thái là `partial`; nếu Amazon
 trả CAPTCHA, HTTP 429 hoặc 503 thì lô dừng sớm để hạn chế chặn kết nối.
 
+## Giới hạn khi cào Amazon trên Streamlit Cloud
+
+Thông tin giao hàng phụ thuộc ZIP, thời điểm, cookie và phiên Amazon. Streamlit
+Cloud dùng IP máy chủ dùng chung, không dùng phiên Chrome trên máy của người dùng.
+Nếu Amazon trả `Robot Check`, `Sorry! Something went wrong!`, HTTP 429/503 hoặc
+trang trung gian không có ASIN, app sẽ báo lỗi chẩn đoán và dừng các ngách còn lại
+thay vì ghi hàng loạt CSV rỗng.
+
+Khi Amazon trả đúng thẻ kết quả, cột `delivery_detail` được phân loại độc lập:
+
+- `Prime member | FREE delivery | Today 2 PM - 6 PM`
+- `Prime member | FREE delivery | Tomorrow, August 1`
+- `Prime member | FREE delivery | Overnight 7 AM - 11 AM`
+- `Fresh | Ships from: AmazonFresh | Sold by: AmazonFresh`
+
+Để lấy ngày giao ổn định hơn, nên chạy scraper từ kết nối tại Mỹ hoặc một worker
+cục bộ có phiên trình duyệt và ZIP phù hợp, sau đó đồng bộ CSV lên Google Drive.
+Phần Streamlit Cloud phù hợp hơn cho quản lý, duyệt và tải dữ liệu đã đồng bộ.
+
 ## Secrets đầy đủ
 
 File mẫu nằm tại `.streamlit/secrets.example.toml`. Chỉ sao chép những phần bạn cần. Không commit `.streamlit/secrets.toml`, `drive_secrets.toml`, OAuth JSON, refresh token, bot token hoặc mật khẩu email.
