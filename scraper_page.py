@@ -419,6 +419,7 @@ def _results_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
     frame["price"] = pd.to_numeric(frame["price"], errors="coerce")
     frame["delivery_options"] = frame["delivery_options"].fillna("").astype(str)
     frame["delivery_detail"] = frame["delivery_detail"].fillna("").astype(str)
+    frame["fresh_shipping"] = frame["fresh_shipping"].fillna("").astype(str)
     frame["variants"] = frame["variants"].fillna("").astype(str)
     for column in (
         "prime",
@@ -753,6 +754,7 @@ def _render_table(frame: pd.DataFrame) -> None:
         "price",
         "variants",
         "delivery_detail",
+        "fresh_shipping",
         "keyword",
         "product_url",
         "rating",
@@ -779,6 +781,9 @@ def _render_table(frame: pd.DataFrame) -> None:
             ),
             "delivery_detail": st.column_config.TextColumn(
                 "Thông tin giao hàng", width="medium"
+            ),
+            "fresh_shipping": st.column_config.TextColumn(
+                "Ship Fresh", width="medium"
             ),
             "keyword": st.column_config.TextColumn("Ngách"),
             "product_url": st.column_config.LinkColumn(
@@ -1039,7 +1044,8 @@ with st.sidebar:
     )
     st.caption(
         "Bắt buộc: chỉ giữ giao hàng FREE dành cho Prime members và có "
-        "Today, Tomorrow hoặc Overnight; Amazon Fresh/giao grocery bị loại."
+        "Today, Tomorrow hoặc Overnight; ship Fresh được tách sang cột riêng "
+        "và không dùng để xét đạt."
     )
     only_usd = st.checkbox("Chỉ lấy sản phẩm có giá USD", key="only_usd")
     file_mode = st.selectbox(

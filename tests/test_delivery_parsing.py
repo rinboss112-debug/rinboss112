@@ -72,6 +72,7 @@ class DeliveryParsingTests(unittest.TestCase):
             PRODUCT_COLUMNS[:5],
             ["title", "image_url", "price", "variants", "delivery_detail"],
         )
+        self.assertEqual(PRODUCT_COLUMNS[5], "fresh_shipping")
 
     def test_delivery_fallback_handles_new_unknown_html_class(self) -> None:
         html = """
@@ -180,7 +181,7 @@ class DeliveryParsingTests(unittest.TestCase):
             "Size: 24 Count | Flavor: Chocolate",
         )
 
-    def test_detail_page_rejects_amazon_fresh_offer(self) -> None:
+    def test_detail_page_separates_fresh_only_offer(self) -> None:
         search_html = """
         <div data-asin="B012345678">
           <h2><a href="/dp/B012345678"><span>Organic Snack Box</span></a></h2>
@@ -200,8 +201,33 @@ class DeliveryParsingTests(unittest.TestCase):
 
         status = _enrich_delivery_from_detail(_FakeSession(detail_html), product)
 
-        self.assertEqual(status, "fresh")
+        self.assertEqual(status, "not_prime")
+        self.assertIn("2-hour delivery", product.fresh_shipping)
         self.assertEqual(product.variants, "")
+
+    def test_detail_page_keeps_prime_and_fresh_in_separate_fields(self) -> None:
+        search_html = """
+        <div data-asin="B012345678">
+          <h2><a href="/dp/B012345678"><span>Organic Snack Box</span></a></h2>
+          <span class="a-price"><span class="a-offscreen">$19.99</span></span>
+        </div>
+        """
+        detail_html = """
+        <div id="mir-layout-DELIVERY_BLOCK">
+          Prime members get FREE delivery Tomorrow
+          | FREE grocery delivery is available to Prime members.
+        </div>
+        <div>Ships from AmazonFresh</div>
+        """
+        card = BeautifulSoup(search_html, "lxml").select_one("[data-asin]")
+        product = _extract_product(card, "snack box")
+        self.assertIsNotNone(product)
+
+        status = _enrich_delivery_from_detail(_FakeSession(detail_html), product)
+
+        self.assertEqual(status, "verified")
+        self.assertEqual(product.delivery_detail, "Tomorrow")
+        self.assertIn("grocery delivery", product.fresh_shipping)
 
     def test_detail_page_requires_prime_members_delivery(self) -> None:
         search_html = """

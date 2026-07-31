@@ -20,8 +20,8 @@ Web app Streamlit tiếng Việt để chạy tuần tự nhiều ngách Amazon,
   365/365 by Whole Foods Market mà không nhầm với nội dung giao hàng của Amazon.
 - Chỉ nhận sản phẩm có giao hàng `Prime members`, đồng thời có
   `FREE delivery/free shipping` và `Today`, `Tomorrow` hoặc `Overnight`.
-- Loại Amazon Fresh, giao 2 giờ và grocery delivery kể cả khi ưu đãi đó dành
-  cho thành viên Prime.
+- Tách Amazon Fresh, giao 2 giờ và grocery delivery sang cột
+  `fresh_shipping`; sản phẩm chỉ có Fresh mà không có ship Prime thường vẫn bị loại.
 - Thông tin giao hàng được rút gọn thành nội dung hữu ích như `Overnight 4 AM - 8 AM`, không lấy quảng cáo Prime hay bộ đếm đặt hàng.
 - Có bộ đọc dự phòng khi Amazon đổi class HTML giao hàng và log thống kê từng lý do sản phẩm bị loại.
 - Đồng bộ CSV lên Google Drive ngay sau từng ngách.
