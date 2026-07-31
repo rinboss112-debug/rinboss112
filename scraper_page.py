@@ -1033,13 +1033,12 @@ with st.sidebar:
     )
     only_deliverable = st.checkbox(
         "Chỉ lấy sản phẩm giao được tới ZIP",
-        value=True,
-        disabled=True,
+        value=False,
         key="only_deliverable",
     )
     st.caption(
-        "Bắt buộc: chỉ nhận Prime member + FREE delivery/free shipping và có "
-        "Today, Tomorrow hoặc Overnight; Fresh/grocery/2-hour bị loại."
+        "Chỉ loại sản phẩm có ship Fresh. Các kiểu giao hàng còn lại đều được "
+        "giữ và ghi nguyên nội dung vào cột Thông tin ship."
     )
     only_usd = st.checkbox("Chỉ lấy sản phẩm có giá USD", key="only_usd")
     file_mode = st.selectbox(

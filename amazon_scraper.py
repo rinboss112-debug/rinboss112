@@ -681,7 +681,7 @@ def _is_prime_member_delivery_text(delivery_text: str) -> bool:
             r"\bprime members?\s+(?:can\s+)?(?:get\s+)?"
             r"free\s+(?:delivery|shipping)\b",
             r"\bfree\s+(?:delivery|shipping)\b.{0,80}"
-            r"\b(?:for|with)\s+prime members?\b",
+            r"\b(?:for|with)\s+prime(?:\s+members?)?\b",
         )
     )
 
@@ -691,17 +691,7 @@ def _is_fresh_delivery_offer(
     page_html: str = "",
 ) -> bool:
     normalized_delivery = _normalized_brand_text(delivery_text)
-    if any(
-        marker in normalized_delivery
-        for marker in (
-            "amazonfresh",
-            "amazon fresh",
-            "free 2 hour delivery",
-            "free two hour delivery",
-            "free grocery delivery",
-            "fresh delivery",
-        )
-    ):
+    if re.search(r"\b(?:amazon\s*)?fresh\b", normalized_delivery):
         return True
 
     page_text = _normalized_brand_text(
@@ -750,6 +740,43 @@ def _extract_fresh_shipping_text(
     return " | ".join(pieces)
 
 
+def _shipping_detail_text(delivery_text: str) -> str:
+    """Return readable shipping copy without requiring Prime or fast delivery."""
+    cleaned = _clean_text(delivery_text)
+    if not cleaned:
+        return ""
+
+    segments = [
+        _clean_text(segment)
+        for segment in re.split(r"\s*\|\s*", cleaned)
+        if _clean_text(segment)
+    ]
+    meaningful = [
+        segment
+        for segment in segments
+        if re.search(
+            r"\b(?:delivery|shipping|arrives?|today|tomorrow|overnight)\b",
+            segment,
+            flags=re.IGNORECASE,
+        )
+    ]
+    candidates = meaningful or segments
+    details: list[str] = []
+    for candidate in candidates:
+        key = candidate.casefold()
+        if any(key == existing.casefold() for existing in details):
+            continue
+        if any(existing.casefold() in key for existing in details):
+            continue
+        details = [
+            existing
+            for existing in details
+            if key not in existing.casefold()
+        ]
+        details.append(candidate)
+    return " | ".join(details)[:600]
+
+
 def _prime_shipping_text(delivery_text: str) -> str:
     if not _is_prime_member_delivery_text(delivery_text):
         return ""
@@ -769,7 +796,7 @@ def _apply_delivery_text(product: Product, delivery_text: str) -> None:
     delivery_lower = delivery_text.lower()
     unavailable_markers = ("cannot be shipped", "not deliverable", "unavailable")
     product.delivery_options = _extract_delivery_options(delivery_text)
-    product.delivery_detail = _extract_delivery_detail(delivery_text)
+    product.delivery_detail = _shipping_detail_text(delivery_text)
     product.delivery_available = bool(delivery_text) and not any(
         marker in delivery_lower for marker in unavailable_markers
     )
@@ -785,8 +812,9 @@ def _enrich_delivery_from_detail(
 ) -> str:
     """Enrich delivery promises and product variants from one detail request.
 
-    Returns ``verified``, ``fresh``, ``not_prime``, ``missing``, ``blocked`` or
-    ``error``. Only verified Prime delivery is exposed in the result field.
+    Returns ``enriched``, ``fresh``, ``missing``, ``blocked`` or ``error``.
+    Fresh offers are rejected by the caller; all other readable shipping copy
+    is preserved without requiring Prime, FREE or fast-delivery wording.
     """
     try:
         detail_url = (
@@ -810,30 +838,19 @@ def _enrich_delivery_from_detail(
         response.text,
         product.title,
     )
-    if not delivery_text and not fresh_shipping:
+    if fresh_shipping:
+        product.delivery_detail = ""
+        return "fresh"
+    if not delivery_text:
         return "missing"
     previous_free_shipping = product.free_shipping
     previous_options = product.delivery_options
-    if delivery_text:
-        _apply_delivery_text(product, delivery_text)
-        product.free_shipping = previous_free_shipping or product.free_shipping
-        if not product.delivery_options and previous_options:
-            product.delivery_options = previous_options
-    prime_shipping = _prime_shipping_text(delivery_text)
-    prime_verified = bool(
-        prime_shipping and product.free_shipping and product.delivery_options
-    )
-    product.delivery_detail = prime_shipping if prime_verified else ""
-    if prime_verified:
-        product.fast_shipping = True
-        return "verified"
-    if fresh_shipping:
-        return "fresh"
-    product.delivery_detail = ""
+    _apply_delivery_text(product, delivery_text)
+    product.free_shipping = previous_free_shipping or product.free_shipping
+    if not product.delivery_options and previous_options:
+        product.delivery_options = previous_options
     product.fast_shipping = bool(product.delivery_options)
-    if delivery_text:
-        return "not_prime"
-    return "missing"
+    return "enriched"
 
 
 def _extract_product(card: Tag, keyword: str) -> Product | None:
@@ -880,12 +897,6 @@ def _extract_product(card: Tag, keyword: str) -> Product | None:
         scraped_at=datetime.now().isoformat(timespec="seconds"),
     )
     _apply_delivery_text(product, delivery_text)
-    fresh_shipping = _extract_fresh_shipping_text(delivery_text, str(card))
-    prime_shipping = _prime_shipping_text(delivery_text)
-    prime_verified = bool(
-        prime_shipping and product.free_shipping and product.delivery_options
-    )
-    product.delivery_detail = prime_shipping if prime_verified else ""
     return product
 
 
@@ -989,16 +1000,13 @@ def scrape_keyword(
 
             accepted_on_page = 0
             detail_attempts_on_page = 0
-            shipping_verified_on_page = 0
+            shipping_enriched_on_page = 0
             variants_found_on_page = 0
             rejected = {
                 "không đọc được": 0,
                 "trùng ASIN": 0,
                 "brand Amazon/365": 0,
                 "ship Fresh": 0,
-                "không có ship Prime member": 0,
-                "thiếu FREE": 0,
-                "thiếu Today/Tomorrow/Overnight": 0,
                 "ngoài khoảng giá": 0,
                 "không giao được": 0,
                 "không phải USD": 0,
@@ -1018,13 +1026,13 @@ def scrape_keyword(
                     card_delivery_text,
                     str(card),
                 )
-                prime_member_delivery_confirmed = (
-                    _is_prime_member_delivery_text(card_delivery_text)
-                )
                 if product.asin in seen_asins:
                     rejected["trùng ASIN"] += 1
                     continue
                 seen_asins.add(product.asin)
+                if fresh_delivery_detected:
+                    rejected["ship Fresh"] += 1
+                    continue
                 price_matches = not (
                     minimum_price is not None
                     and (product.price is None or product.price < minimum_price)
@@ -1033,86 +1041,18 @@ def scrape_keyword(
                     and (product.price is None or product.price > maximum_price)
                 )
                 currency_matches = not only_usd or product.currency == "USD"
-                detail_checked = False
-                needs_delivery_detail = not (
-                    product.free_shipping and product.delivery_options
-                )
-                has_delivery_signal = (
-                    product.free_shipping
-                    or bool(product.delivery_options)
-                    or fresh_delivery_detected
-                )
-                if (
-                    needs_delivery_detail
-                    and has_delivery_signal
-                    and price_matches
-                    and currency_matches
-                    and detail_checks_remaining > 0
-                ):
-                    if not detail_fallback_announced:
-                        _log(
-                            log_callback,
-                            "Đang kiểm tra có giới hạn trang chi tiết để lấy "
-                            "thông tin giao hàng và biến thể sản phẩm.",
-                        )
-                        detail_fallback_announced = True
-                    if detail_requests_made:
-                        time.sleep(DETAIL_CHECK_DELAY_SECONDS)
-                    detail_status = _enrich_delivery_from_detail(session, product)
-                    detail_checked = True
-                    detail_requests_made += 1
-                    detail_attempts_on_page += 1
-                    detail_checks_remaining -= 1
-                    if product.variants:
-                        variants_found_on_page += 1
-                    if detail_status == "verified":
-                        prime_member_delivery_confirmed = True
-                        shipping_verified_on_page += 1
-                    elif detail_status == "fresh":
-                        fresh_delivery_detected = True
-                    elif detail_status in {"blocked", "error"}:
-                        detail_checks_remaining = 0
-                        reason = (
-                            "Amazon yêu cầu CAPTCHA"
-                            if detail_status == "blocked"
-                            else "Amazon trả về lỗi kết nối/503"
-                        )
-                        _log(
-                            log_callback,
-                            f"CẢNH BÁO: Dừng kiểm tra trang chi tiết vì {reason}; "
-                            "không gửi thêm request trong ngách này.",
-                        )
-                if fresh_delivery_detected and not prime_member_delivery_confirmed:
-                    rejected["ship Fresh"] += 1
-                    continue
-                if not product.free_shipping:
-                    rejected["thiếu FREE"] += 1
-                    continue
-                if not product.delivery_options:
-                    rejected["thiếu Today/Tomorrow/Overnight"] += 1
-                    continue
-                if minimum_price is not None and (
-                    product.price is None or product.price < minimum_price
-                ):
+                if not price_matches:
                     rejected["ngoài khoảng giá"] += 1
                     continue
-                if maximum_price is not None and (
-                    product.price is None or product.price > maximum_price
-                ):
-                    rejected["ngoài khoảng giá"] += 1
-                    continue
-                if only_deliverable and not product.delivery_available:
-                    rejected["không giao được"] += 1
-                    continue
-                if only_usd and product.currency != "USD":
+                if not currency_matches:
                     rejected["không phải USD"] += 1
                     continue
-                if not detail_checked and detail_checks_remaining > 0:
+                if detail_checks_remaining > 0:
                     if not detail_fallback_announced:
                         _log(
                             log_callback,
                             "Đang kiểm tra có giới hạn trang chi tiết để lấy "
-                            "Size/Flavor khớp với tiêu đề sản phẩm.",
+                            "thông tin giao hàng và Size/Flavor khớp tiêu đề.",
                         )
                         detail_fallback_announced = True
                     if detail_requests_made:
@@ -1123,9 +1063,8 @@ def scrape_keyword(
                     detail_checks_remaining -= 1
                     if product.variants:
                         variants_found_on_page += 1
-                    if detail_status == "verified":
-                        prime_member_delivery_confirmed = True
-                        shipping_verified_on_page += 1
+                    if detail_status == "enriched":
+                        shipping_enriched_on_page += 1
                     elif detail_status == "fresh":
                         fresh_delivery_detected = True
                     elif detail_status in {"blocked", "error"}:
@@ -1138,17 +1077,21 @@ def scrape_keyword(
                         _log(
                             log_callback,
                             f"CẢNH BÁO: Dừng kiểm tra trang chi tiết vì {reason}; "
-                            "các sản phẩm còn lại vẫn được lưu nhưng cột variants "
-                            "có thể để trống.",
+                            "các sản phẩm không phải Fresh vẫn được lưu; thông tin "
+                            "ship và variants có thể để trống.",
                         )
-                if not prime_member_delivery_confirmed:
-                    reason = (
-                        "ship Fresh"
-                        if fresh_delivery_detected
-                        else "không có ship Prime member"
-                    )
-                    rejected[reason] += 1
+                if fresh_delivery_detected:
+                    rejected["ship Fresh"] += 1
                     continue
+                if (
+                    only_deliverable
+                    and product.delivery_detail
+                    and not product.delivery_available
+                ):
+                    rejected["không giao được"] += 1
+                    continue
+                if not product.delivery_detail:
+                    product.delivery_detail = "Không thấy thông tin ship"
                 products.append(product)
                 accepted_on_page += 1
                 if len(products) >= max_products:
@@ -1163,9 +1106,8 @@ def scrape_keyword(
                 _log(
                     log_callback,
                     f"Kiểm tra trang chi tiết: {detail_attempts_on_page} sản phẩm, "
-                    f"xác minh được {shipping_verified_on_page} sản phẩm Prime member "
-                    "+ FREE + Today/Tomorrow/Overnight, lấy được Size/Flavor khớp "
-                    "tiêu đề cho "
+                    f"đọc được ship cho {shipping_enriched_on_page} sản phẩm, "
+                    "lấy được Size/Flavor khớp tiêu đề cho "
                     f"{variants_found_on_page} sản phẩm.",
                 )
             rejection_summary = ", ".join(

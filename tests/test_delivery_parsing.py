@@ -91,7 +91,7 @@ class DeliveryParsingTests(unittest.TestCase):
         self.assertEqual(product.delivery_options, "Overnight")
         self.assertEqual(
             product.delivery_detail,
-            "Prime member | FREE delivery | Overnight 4 AM - 8 AM",
+            "Or Prime members get FREE delivery Overnight 4 AM - 8 AM",
         )
         self.assertTrue(
             _is_prime_member_delivery_text(_combined_delivery_text_from_card(card))
@@ -140,12 +140,12 @@ class DeliveryParsingTests(unittest.TestCase):
         session = _FakeSession(detail_html)
         status = _enrich_delivery_from_detail(session, product)
 
-        self.assertEqual(status, "verified")
+        self.assertEqual(status, "enriched")
         self.assertTrue(product.free_shipping)
         self.assertEqual(product.delivery_options, "Overnight")
         self.assertEqual(
             product.delivery_detail,
-            "Prime member | FREE delivery | Overnight 4 AM - 8 AM",
+            "Prime members get FREE delivery Overnight 4 AM - 8 AM",
         )
         self.assertEqual(product.variants, "Size: 12 Count")
         self.assertEqual(
@@ -210,7 +210,7 @@ class DeliveryParsingTests(unittest.TestCase):
         self.assertEqual(product.delivery_detail, "")
         self.assertEqual(product.variants, "")
 
-    def test_detail_page_keeps_only_prime_when_fresh_is_also_present(self) -> None:
+    def test_detail_page_rejects_offer_when_fresh_is_also_present(self) -> None:
         search_html = """
         <div data-asin="B012345678">
           <h2><a href="/dp/B012345678"><span>Organic Snack Box</span></a></h2>
@@ -230,15 +230,10 @@ class DeliveryParsingTests(unittest.TestCase):
 
         status = _enrich_delivery_from_detail(_FakeSession(detail_html), product)
 
-        self.assertEqual(status, "verified")
-        self.assertEqual(
-            product.delivery_detail,
-            "Prime member | FREE delivery | Tomorrow",
-        )
-        self.assertNotIn("Fresh", product.delivery_detail)
-        self.assertNotIn("AmazonFresh", product.delivery_detail)
+        self.assertEqual(status, "fresh")
+        self.assertEqual(product.delivery_detail, "")
 
-    def test_detail_page_requires_prime_members_delivery(self) -> None:
+    def test_detail_page_keeps_non_prime_delivery(self) -> None:
         search_html = """
         <div data-asin="B012345678">
           <h2><a href="/dp/B012345678"><span>Organic Snack Box</span></a></h2>
@@ -256,7 +251,18 @@ class DeliveryParsingTests(unittest.TestCase):
 
         status = _enrich_delivery_from_detail(_FakeSession(detail_html), product)
 
-        self.assertEqual(status, "not_prime")
+        self.assertEqual(status, "enriched")
+        self.assertEqual(
+            product.delivery_detail,
+            "FREE delivery Overnight 4 AM - 8 AM",
+        )
+
+    def test_prime_matcher_accepts_with_prime_wording(self) -> None:
+        delivery_text = (
+            "FREE delivery Overnight 5 AM - 7 AM "
+            "on orders over $100 with Prime"
+        )
+        self.assertTrue(_is_prime_member_delivery_text(delivery_text))
 
 
 if __name__ == "__main__":
