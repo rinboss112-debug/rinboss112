@@ -14,7 +14,7 @@ from amazon_scraper import (
     _is_excluded_amazon_brand_product,
     _is_prime_member_delivery_text,
     _qualified_delivery_fallback,
-    _qualified_prime_shipping_text,
+    _qualified_fast_free_shipping_text,
 )
 
 
@@ -266,7 +266,7 @@ class DeliveryParsingTests(unittest.TestCase):
         )
         self.assertTrue(_is_prime_member_delivery_text(delivery_text))
         self.assertEqual(
-            _qualified_prime_shipping_text(delivery_text),
+            _qualified_fast_free_shipping_text(delivery_text),
             delivery_text,
         )
 
@@ -275,7 +275,7 @@ class DeliveryParsingTests(unittest.TestCase):
             "Or Prime members get FREE delivery Saturday, August 1 "
             "| Overnight 7 AM - 11 AM"
         )
-        self.assertEqual(_qualified_prime_shipping_text(delivery_text), "")
+        self.assertEqual(_qualified_fast_free_shipping_text(delivery_text), "")
 
     def test_qualified_shipping_accepts_prime_members_overnight(self) -> None:
         delivery_text = (
@@ -283,7 +283,24 @@ class DeliveryParsingTests(unittest.TestCase):
             "on eligible orders."
         )
         self.assertEqual(
-            _qualified_prime_shipping_text(delivery_text),
+            _qualified_fast_free_shipping_text(delivery_text),
+            delivery_text,
+        )
+
+    def test_qualified_shipping_does_not_require_prime(self) -> None:
+        delivery_text = "FREE delivery Tomorrow, July 31"
+        self.assertEqual(
+            _qualified_fast_free_shipping_text(delivery_text),
+            delivery_text,
+        )
+
+    def test_qualified_shipping_accepts_join_prime_overnight_wording(self) -> None:
+        delivery_text = (
+            "Join Prime to get FREE delivery Overnight 7 AM - 11 AM "
+            "on eligible orders"
+        )
+        self.assertEqual(
+            _qualified_fast_free_shipping_text(delivery_text),
             delivery_text,
         )
 

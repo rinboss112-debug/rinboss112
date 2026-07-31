@@ -384,7 +384,7 @@ def _delivery_fallback_from_card_text(card_text: str) -> str:
 
 
 def _qualified_delivery_fallback(page_text: str) -> str:
-    """Find a complete qualifying Prime offer when Amazon changes its HTML."""
+    """Find a complete FREE + fast-delivery offer in changed Amazon HTML."""
     timing = (
         r"(?:overnight(?:\s+(?:by\s+)?\d{1,2}(?::\d{2})?\s*(?:AM|PM)"
         r"\s*(?:-|–|—|to)\s*\d{1,2}(?::\d{2})?\s*(?:AM|PM))?"
@@ -396,6 +396,7 @@ def _qualified_delivery_fallback(page_text: str) -> str:
         rf"free\s+(?:delivery|shipping)\s+{timing}",
         rf"\bfree\s+(?:delivery|shipping)\s+{timing}"
         rf".{{0,160}}?\bwith\s+prime(?:\s+members?)?\b",
+        rf"\bfree\s+(?:delivery|shipping)\s+{timing}",
     )
     for pattern in patterns:
         match = re.search(pattern, page_text, flags=re.IGNORECASE)
@@ -853,14 +854,13 @@ def _shipping_detail_text(delivery_text: str) -> str:
     return " | ".join(details)[:600]
 
 
-def _qualified_prime_shipping_text(delivery_text: str) -> str:
-    """Return one offer containing Prime, FREE and an accepted fast time."""
+def _qualified_fast_free_shipping_text(delivery_text: str) -> str:
+    """Return one offer containing FREE and Today/Tomorrow/Overnight."""
     for raw_segment in re.split(r"\s*\|\s*", _clean_text(delivery_text)):
         segment = _clean_text(raw_segment)
         lowered = segment.casefold()
         if (
             segment
-            and _is_prime_member_delivery_text(segment)
             and (
                 "free delivery" in lowered
                 or "free shipping" in lowered
@@ -894,7 +894,7 @@ def _enrich_delivery_from_detail(
 
     Returns ``enriched``, ``fresh``, ``missing``, ``blocked`` or ``error``.
     The caller rejects Fresh and accepts only one shipping line containing
-    Prime, FREE and Today/Tomorrow/Overnight.
+    FREE and Today/Tomorrow/Overnight.
     """
     try:
         detail_url = (
@@ -1084,7 +1084,7 @@ def scrape_keyword(
                 "trùng ASIN": 0,
                 "brand Amazon/365": 0,
                 "ship Fresh": 0,
-                "thiếu Prime + FREE + Today/Tomorrow/Overnight cùng dòng": 0,
+                "thiếu FREE + Today/Tomorrow/Overnight cùng dòng": 0,
                 "ngoài khoảng giá": 0,
                 "không giao được": 0,
                 "không phải USD": 0,
@@ -1161,16 +1161,15 @@ def scrape_keyword(
                 if fresh_delivery_detected:
                     rejected["ship Fresh"] += 1
                     continue
-                qualified_shipping = _qualified_prime_shipping_text(
+                qualified_shipping = _qualified_fast_free_shipping_text(
                     product.delivery_detail
                 )
                 if not qualified_shipping:
                     rejected[
-                        "thiếu Prime + FREE + Today/Tomorrow/Overnight cùng dòng"
+                        "thiếu FREE + Today/Tomorrow/Overnight cùng dòng"
                     ] += 1
                     continue
                 _apply_delivery_text(product, qualified_shipping)
-                product.prime = True
                 if (
                     only_deliverable
                     and not product.delivery_available
