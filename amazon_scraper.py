@@ -25,8 +25,6 @@ from urllib3.util.retry import Retry
 AMAZON_BASE_URL = "https://www.amazon.com"
 DEFAULT_TIMEOUT_SECONDS = 30
 DEFAULT_DELAY_SECONDS = 1.25
-DETAIL_CHECK_DELAY_SECONDS = 0.75
-MAX_DETAIL_CHECKS_PER_NICHE = 24
 
 LogCallback = Callable[[str], None]
 ProgressCallback = Callable[[int, int, str, str, int], None]
@@ -39,7 +37,6 @@ class Product:
     title: str
     image_url: str
     price: float | None
-    variants: str
     delivery_detail: str
     keyword: str
     asin: str
@@ -375,7 +372,8 @@ def _extract_delivery_text(card: Tag) -> str:
 def _delivery_fallback_from_card_text(card_text: str) -> str:
     """Recover delivery copy when Amazon changes the delivery element classes."""
     match = re.search(
-        r"(?:\b(?:or\s+)?prime\s+members?\s+(?:get\s+)?)?"
+        r"(?:\bjoin\s+prime\s+to\s+get\s+|"
+        r"\b(?:or\s+)?prime\s+members?\s+(?:get\s+)?)?"
         r"\bfree\s+(?:delivery|shipping)\b.{0,240}",
         card_text,
         flags=re.IGNORECASE,
@@ -385,13 +383,18 @@ def _delivery_fallback_from_card_text(card_text: str) -> str:
 
 def _qualified_delivery_fallback(page_text: str) -> str:
     """Find a complete FREE + fast-delivery offer in changed Amazon HTML."""
+    time_window = (
+        r"(?:\s+(?:by\s+)?\d{1,2}(?::\d{2})?\s*(?:AM|PM)"
+        r"(?:\s*(?:-|–|—|to)\s*\d{1,2}(?::\d{2})?\s*(?:AM|PM))?)?"
+    )
     timing = (
-        r"(?:overnight(?:\s+(?:by\s+)?\d{1,2}(?::\d{2})?\s*(?:AM|PM)"
-        r"\s*(?:-|–|—|to)\s*\d{1,2}(?::\d{2})?\s*(?:AM|PM))?"
-        r"|today(?:,\s*(?:[A-Za-z]+\s+)?\d{1,2})?"
-        r"|tomorrow(?:,\s*(?:[A-Za-z]+\s+)?\d{1,2})?)"
+        rf"(?:overnight{time_window}"
+        rf"|today(?:,\s*(?:[A-Za-z]+\s+)?\d{{1,2}})?{time_window}"
+        rf"|tomorrow(?:,\s*(?:[A-Za-z]+\s+)?\d{{1,2}})?{time_window})"
     )
     patterns = (
+        rf"\bjoin\s+prime\s+to\s+get\s+"
+        rf"free\s+(?:delivery|shipping)\s+{timing}",
         rf"\b(?:or\s+)?prime\s+members?\s+(?:can\s+)?(?:get\s+)?"
         rf"free\s+(?:delivery|shipping)\s+{timing}",
         rf"\bfree\s+(?:delivery|shipping)\s+{timing}"
@@ -813,12 +816,11 @@ def _shipping_detail_text(delivery_text: str) -> str:
         for segment in re.split(r"\s*\|\s*", cleaned)
         if _clean_text(segment)
     ]
-    candidate_segments = [cleaned]
-    candidate_segments.extend(
-        segment
-        for segment in segments
-        if segment.casefold() != cleaned.casefold()
-    )
+    candidate_segments: list[str] = []
+    for segment in segments or [cleaned]:
+        qualified_offer = _qualified_delivery_fallback(segment)
+        candidate_segments.append(qualified_offer or segment)
+
     candidates: list[tuple[int, str]] = []
     for segment in candidate_segments:
         if not _extract_delivery_options(segment):
@@ -901,71 +903,10 @@ def _apply_delivery_text(product: Product, delivery_text: str) -> None:
     )
 
 
-def _enrich_delivery_from_detail(
-    session: requests.Session,
-    product: Product,
-) -> str:
-    """Enrich delivery promises and product variants from one detail request.
-
-    Returns ``enriched``, ``fresh``, ``missing``, ``blocked`` or ``error``.
-    Fresh is reported separately but remains part of the product data.
-    """
-    try:
-        detail_url = (
-            f"{AMAZON_BASE_URL}/gp/aw/d/{quote(product.asin, safe='')}"
-            "?th=1&psc=1"
-        )
-        response = session.get(
-            detail_url,
-            headers={"Referer": f"{AMAZON_BASE_URL}/s?k={quote_plus(product.keyword)}"},
-            timeout=DEFAULT_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-    except requests.RequestException:
-        return "error"
-    if _looks_blocked(response.text):
-        return "blocked"
-
-    delivery_text = _delivery_text_from_detail_html(response.text)
-    fresh_shipping = _extract_fresh_shipping_text(delivery_text, response.text)
-    product.variants = _extract_variants_from_detail_html(
-        response.text,
-        product.title,
-    )
-    if not delivery_text and not fresh_shipping:
-        return "missing"
-    previous_free_shipping = product.free_shipping
-    previous_options = product.delivery_options
-    previous_delivery_detail = product.delivery_detail
-    previous_delivery_available = product.delivery_available
-    if delivery_text:
-        _apply_delivery_text(product, delivery_text)
-    if not product.delivery_detail and previous_delivery_detail:
-        product.delivery_detail = previous_delivery_detail
-        product.delivery_available = previous_delivery_available
-    product.free_shipping = previous_free_shipping or product.free_shipping
-    if not product.delivery_options and previous_options:
-        product.delivery_options = previous_options
-    product.fast_shipping = bool(product.delivery_options)
-    if fresh_shipping:
-        if fresh_shipping.casefold() not in product.delivery_detail.casefold():
-            product.delivery_detail = " | ".join(
-                value
-                for value in (product.delivery_detail, fresh_shipping)
-                if value
-            )
-        product.delivery_available = True
-        return "fresh"
-    if not product.delivery_detail:
-        return "missing"
-    return "enriched"
-
-
 def _extract_product(card: Tag, keyword: str) -> Product | None:
     asin = _clean_text(card.get("data-asin"))
     title = _select_text(card, "h2 span") or _select_text(card, "h2")
-    link = card.select_one("h2 a[href], a.a-link-normal.s-no-outline[href]")
-    if not asin or not title or not link:
+    if not asin or not title:
         return None
 
     product_url = _canonical_product_url(asin)
@@ -998,7 +939,6 @@ def _extract_product(card: Tag, keyword: str) -> Product | None:
         delivery_available=False,
         delivery_options="",
         delivery_detail="",
-        variants="",
         image_url=image_url,
         product_url=product_url,
         sponsored=sponsored,
@@ -1079,9 +1019,6 @@ def scrape_keyword(
         raise ValueError("max_pages và max_products phải lớn hơn 0.")
     products: list[Product] = []
     seen_asins: set[str] = set()
-    detail_checks_remaining = MAX_DETAIL_CHECKS_PER_NICHE
-    detail_fallback_announced = False
-    detail_requests_made = 0
     session = _build_session()
     try:
         _log(log_callback, f"Bắt đầu ngách '{keyword}'.")
@@ -1089,6 +1026,11 @@ def scrape_keyword(
             log_callback,
             "Chế độ cào rộng: giữ mọi sản phẩm đọc được; bộ lọc chỉ áp dụng "
             "khi xem hoặc tải kết quả.",
+        )
+        _log(
+            log_callback,
+            "Chỉ đọc thẻ sản phẩm trên trang kết quả; không mở trang chi tiết "
+            "và không lấy biến thể.",
         )
         _set_delivery_zip(session, zip_code, log_callback)
 
@@ -1115,10 +1057,7 @@ def scrape_keyword(
                 break
 
             accepted_on_page = 0
-            detail_attempts_on_page = 0
-            shipping_enriched_on_page = 0
-            variants_found_on_page = 0
-            fresh_kept_on_page = 0
+            shipping_found_on_page = 0
             rejected = {
                 "không đọc được": 0,
                 "trùng ASIN": 0,
@@ -1132,39 +1071,9 @@ def scrape_keyword(
                     rejected["trùng ASIN"] += 1
                     continue
                 seen_asins.add(product.asin)
-                if detail_checks_remaining > 0:
-                    if not detail_fallback_announced:
-                        _log(
-                            log_callback,
-                            "Đang kiểm tra có giới hạn trang chi tiết để lấy "
-                            "thông tin giao hàng và Size/Flavor khớp tiêu đề.",
-                        )
-                        detail_fallback_announced = True
-                    if detail_requests_made:
-                        time.sleep(DETAIL_CHECK_DELAY_SECONDS)
-                    detail_status = _enrich_delivery_from_detail(session, product)
-                    detail_requests_made += 1
-                    detail_attempts_on_page += 1
-                    detail_checks_remaining -= 1
-                    if product.variants:
-                        variants_found_on_page += 1
-                    if detail_status == "enriched":
-                        shipping_enriched_on_page += 1
-                    elif detail_status == "fresh":
-                        fresh_kept_on_page += 1
-                    elif detail_status in {"blocked", "error"}:
-                        detail_checks_remaining = 0
-                        reason = (
-                            "Amazon yêu cầu CAPTCHA"
-                            if detail_status == "blocked"
-                            else "Amazon trả về lỗi kết nối/503"
-                        )
-                        _log(
-                            log_callback,
-                            f"CẢNH BÁO: Dừng kiểm tra trang chi tiết vì {reason}; "
-                            "mọi sản phẩm đọc được từ trang tìm kiếm vẫn được lưu.",
-                        )
-                if not product.delivery_detail:
+                if product.delivery_detail:
+                    shipping_found_on_page += 1
+                else:
                     product.delivery_detail = "Không thấy thông tin ship"
                 products.append(product)
                 accepted_on_page += 1
@@ -1176,15 +1085,11 @@ def scrape_keyword(
                 f"Trang {page_number}: thấy {len(cards)} thẻ, nhận "
                 f"{accepted_on_page} sản phẩm, tổng ngách {len(products)}.",
             )
-            if detail_attempts_on_page:
-                _log(
-                    log_callback,
-                    f"Kiểm tra trang chi tiết: {detail_attempts_on_page} sản phẩm, "
-                    f"đọc được ship cho {shipping_enriched_on_page} sản phẩm, "
-                    "lấy được Size/Flavor khớp tiêu đề cho "
-                    f"{variants_found_on_page} sản phẩm, giữ "
-                    f"{fresh_kept_on_page} sản phẩm Fresh.",
-                )
+            _log(
+                log_callback,
+                "Thông tin ship từ thẻ kết quả: "
+                f"{shipping_found_on_page}/{accepted_on_page} sản phẩm.",
+            )
             rejection_summary = ", ".join(
                 f"{reason}={count}"
                 for reason, count in rejected.items()

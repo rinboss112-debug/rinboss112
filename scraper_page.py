@@ -425,7 +425,6 @@ def _results_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
         "currency",
         "delivery_options",
         "delivery_detail",
-        "variants",
     ):
         frame[column] = frame[column].fillna("").astype(str)
     frame["delivery_detail"] = frame["delivery_detail"].map(
@@ -849,7 +848,6 @@ def _render_table(frame: pd.DataFrame) -> None:
         "title",
         "image_url",
         "price",
-        "variants",
         "delivery_detail",
         "keyword",
         "asin",
@@ -877,9 +875,6 @@ def _render_table(frame: pd.DataFrame) -> None:
             ),
             "image_url": st.column_config.ImageColumn("Ảnh", width="small"),
             "price": st.column_config.NumberColumn("Giá", format="$%.2f"),
-            "variants": st.column_config.TextColumn(
-                "Biến thể", width="large"
-            ),
             "delivery_detail": st.column_config.TextColumn(
                 "Thông tin ship", width="large"
             ),
