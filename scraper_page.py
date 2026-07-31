@@ -706,7 +706,13 @@ def _retry_config(config: RunConfig, keywords: list[str]) -> RunConfig:
     )
 
 
-def _filter_results(frame: pd.DataFrame) -> pd.DataFrame:
+def _filter_results(
+    frame: pd.DataFrame,
+    *,
+    initial_minimum: float | None = None,
+    initial_maximum: float | None = None,
+    filter_scope: str = "current",
+) -> pd.DataFrame:
     if frame.empty:
         return frame
     with st.container(border=True):
@@ -736,19 +742,19 @@ def _filter_results(frame: pd.DataFrame) -> pd.DataFrame:
             key="result_currency",
         )
         numeric_row = st.columns(3, vertical_alignment="bottom")
-        st.session_state.setdefault("result_minimum", 0.0)
-        st.session_state.setdefault("result_maximum", 0.0)
         filter_minimum = numeric_row[0].number_input(
             "Giá từ",
             min_value=0.0,
+            value=float(initial_minimum or 0.0),
             step=1.0,
-            key="result_minimum",
+            key=f"result_minimum_{filter_scope}",
         )
         filter_maximum = numeric_row[1].number_input(
             "Giá đến (0 = không giới hạn)",
             min_value=0.0,
+            value=float(initial_maximum or 0.0),
             step=1.0,
-            key="result_maximum",
+            key=f"result_maximum_{filter_scope}",
         )
         filter_rating = numeric_row[2].number_input(
             "Đánh giá tối thiểu",
@@ -898,11 +904,23 @@ def _render_table(frame: pd.DataFrame) -> None:
     )
 
 
-def _render_results_view(full_frame: pd.DataFrame, aggregate_filename: str) -> None:
+def _render_results_view(
+    full_frame: pd.DataFrame,
+    aggregate_filename: str,
+    *,
+    initial_minimum: float | None = None,
+    initial_maximum: float | None = None,
+    filter_scope: str = "current",
+) -> None:
     if full_frame.empty:
         st.caption("Chưa có sản phẩm để hiển thị.")
         return
-    filtered_frame = _filter_results(full_frame)
+    filtered_frame = _filter_results(
+        full_frame,
+        initial_minimum=initial_minimum,
+        initial_maximum=initial_maximum,
+        filter_scope=filter_scope,
+    )
     st.caption(f"Hiển thị {len(filtered_frame):,}/{len(full_frame):,} sản phẩm.")
     _render_table(filtered_frame)
     with st.container(horizontal=True):
@@ -1228,8 +1246,6 @@ with st.sidebar:
         if validation_error:
             st.error(validation_error, icon=":material/error:")
         else:
-            st.session_state["result_minimum"] = float(minimum_price_input)
-            st.session_state["result_maximum"] = float(maximum_price_input)
             if access_identity:
                 try:
                     allowed, access_message = access_store.reserve_run(
@@ -1453,7 +1469,20 @@ def render_live_dashboard() -> None:
             if live_controller.config and live_controller.config.keywords
             else "amazon_all_products.csv"
         )
-        _render_results_view(full_frame, aggregate_filename)
+        active_config = live_controller.config
+        _render_results_view(
+            full_frame,
+            aggregate_filename,
+            initial_minimum=(
+                active_config.minimum_price if active_config is not None else None
+            ),
+            initial_maximum=(
+                active_config.maximum_price if active_config is not None else None
+            ),
+            filter_scope=(
+                active_config.run_id if active_config is not None else "current"
+            ),
+        )
     elif view == "Thống kê":
         _render_statistics_view(full_frame)
     else:
