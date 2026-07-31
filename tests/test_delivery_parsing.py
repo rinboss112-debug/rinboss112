@@ -252,6 +252,30 @@ class DeliveryParsingTests(unittest.TestCase):
         self.assertTrue(product.delivery_available)
         self.assertEqual(product.variants, "")
 
+    def test_search_card_keeps_fresh_shipping_in_shared_delivery_column(
+        self,
+    ) -> None:
+        html = """
+        <div data-asin="B012345678">
+          <h2><a href="/dp/B012345678"><span>Organic Grocery Snack</span></a></h2>
+          <div data-cy="delivery-recipe">
+            fresh
+            FREE 2-hour delivery on orders over $100 with Prime
+            Ships from AmazonFresh
+            Sold by AmazonFresh
+          </div>
+        </div>
+        """
+        card = BeautifulSoup(html, "lxml").select_one("[data-asin]")
+        product = _extract_product(card, "snack box")
+
+        self.assertIsNotNone(product)
+        self.assertEqual(
+            product.delivery_detail,
+            "Fresh | Ships from: AmazonFresh | Sold by: AmazonFresh",
+        )
+        self.assertTrue(product.delivery_available)
+
     def test_detail_page_rejects_offer_when_fresh_is_also_present(self) -> None:
         search_html = """
         <div data-asin="B012345678">

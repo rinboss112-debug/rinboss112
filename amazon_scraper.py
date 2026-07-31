@@ -786,15 +786,6 @@ def _extract_fresh_shipping_text(
     if not _is_fresh_delivery_offer(delivery_text, page_html):
         return ""
     pieces = ["Fresh"]
-    for pattern in (
-        r"\bfree\s+(?:2[-\s]?hour|two[-\s]?hour)\s+delivery\b[^|.]{0,120}",
-        r"\bfree\s+grocery\s+delivery\b[^|.]{0,120}",
-        r"\bfresh\s+delivery\b[^|.]{0,120}",
-    ):
-        match = re.search(pattern, delivery_text, flags=re.IGNORECASE)
-        if match:
-            pieces.append(_clean_text(match.group(0)))
-            break
 
     page_text = _clean_text(
         BeautifulSoup(page_html or "", "lxml").get_text(" ", strip=True)
@@ -905,6 +896,9 @@ def _apply_delivery_text(product: Product, delivery_text: str) -> None:
         "free delivery" in delivery_lower or "free shipping" in delivery_lower
     )
     product.fast_shipping = bool(product.delivery_options)
+    product.prime = product.prime or product.delivery_detail.startswith(
+        "Prime member |"
+    )
 
 
 def _enrich_delivery_from_detail(
@@ -1011,6 +1005,15 @@ def _extract_product(card: Tag, keyword: str) -> Product | None:
         scraped_at=datetime.now().isoformat(timespec="seconds"),
     )
     _apply_delivery_text(product, delivery_text)
+    fresh_shipping = _extract_fresh_shipping_text(delivery_text, str(card))
+    if fresh_shipping:
+        if fresh_shipping.casefold() not in product.delivery_detail.casefold():
+            product.delivery_detail = " | ".join(
+                value
+                for value in (product.delivery_detail, fresh_shipping)
+                if value
+            )
+        product.delivery_available = True
     return product
 
 
