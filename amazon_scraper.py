@@ -477,14 +477,21 @@ def _extract_delivery_detail(delivery_text: str) -> str:
         return _clean_text(overnight.group(0)).replace("–", "-").replace("—", "-")
 
     matches = re.findall(
-        r"\b(?:today|tomorrow)\b(?:,\s*(?:[A-Za-z]+\s+)?\d{1,2})?",
+        r"\b(?:today|tomorrow)\b"
+        r"(?:,\s*(?:[A-Za-z]+\s+)?\d{1,2})?"
+        r"(?:\s+(?:by\s+)?\d{1,2}(?::\d{2})?\s*(?:AM|PM)"
+        r"(?:\s*(?:-|–|—|to)\s*\d{1,2}(?::\d{2})?\s*(?:AM|PM))?)?",
         delivery_text,
         flags=re.IGNORECASE,
     )
     details: list[str] = []
     seen: set[str] = set()
     for match in matches:
-        clean = _clean_text(match)
+        clean = (
+            _clean_text(match)
+            .replace("–", "-")
+            .replace("—", "-")
+        )
         key = clean.casefold()
         if key not in seen:
             seen.add(key)
@@ -508,15 +515,37 @@ def _delivery_text_from_detail_html(page_html: str) -> str:
     pieces: list[str] = []
     for selector in selectors:
         for node in soup.select(selector):
-            values = [
-                node.get_text(" ", strip=True),
-                str(node.get("data-csa-c-delivery-time", "")),
-                str(node.get("data-csa-c-delivery-price", "")),
-            ]
-            for value in values:
-                clean = _clean_text(value)
-                if clean and clean not in pieces:
-                    pieces.append(clean)
+            node_text = _clean_text(node.get_text(" ", strip=True))
+            delivery_time = _clean_text(
+                str(node.get("data-csa-c-delivery-time", ""))
+            )
+            delivery_price = _clean_text(
+                str(node.get("data-csa-c-delivery-price", ""))
+            )
+            if re.search(
+                r"\b(?:delivery|shipping|arrives?|prime|amazon\s*fresh)\b",
+                node_text,
+                flags=re.IGNORECASE,
+            ):
+                if node_text not in pieces:
+                    pieces.append(node_text)
+            attribute_text = _clean_text(
+                " ".join(
+                    value
+                    for value in (
+                        delivery_price,
+                        "delivery" if delivery_price else "",
+                        delivery_time,
+                    )
+                    if value
+                )
+            )
+            if (
+                attribute_text
+                and _extract_delivery_options(attribute_text)
+                and attribute_text not in pieces
+            ):
+                pieces.append(attribute_text)
 
     combined = " | ".join(pieces)
     full_text = _clean_text(soup.get_text(" ", strip=True))
@@ -783,7 +812,7 @@ def _extract_fresh_shipping_text(
 
 
 def _shipping_detail_text(delivery_text: str) -> str:
-    """Return readable shipping offers without losing their qualifying words."""
+    """Return one normalized shipping promise, never variants or SNAP text."""
     cleaned = _clean_text(delivery_text)
     if not cleaned:
         return ""
@@ -793,65 +822,57 @@ def _shipping_detail_text(delivery_text: str) -> str:
         for segment in re.split(r"\s*\|\s*", cleaned)
         if _clean_text(segment)
     ]
-    strong_segments = [
+    candidate_segments = [cleaned]
+    candidate_segments.extend(
         segment
         for segment in segments
-        if re.search(
+        if segment.casefold() != cleaned.casefold()
+    )
+    candidates: list[tuple[int, str]] = []
+    for segment in candidate_segments:
+        if not _extract_delivery_options(segment):
+            continue
+        if not re.search(
             r"\b(?:delivery|shipping|arrives?)\b",
             segment,
             flags=re.IGNORECASE,
-        )
-    ]
-    candidates = strong_segments or segments
-
-    def score(value: str) -> int:
-        lowered = value.casefold()
-        return (
-            (8 if _is_prime_member_delivery_text(value) else 0)
-            + (
-                4
-                if "free delivery" in lowered or "free shipping" in lowered
-                else 0
-            )
-            + (4 if _extract_delivery_options(value) else 0)
-            + (
-                1
-                if re.search(
-                    r"\b(?:delivery|shipping|arrives?)\b",
-                    value,
-                    flags=re.IGNORECASE,
-                )
-                else 0
-            )
-        )
-
-    details: list[str] = []
-    for candidate in candidates:
-        key = candidate.casefold()
-        if any(key == existing.casefold() for existing in details):
+        ):
             continue
-        overlapping = [
-            index
-            for index, existing in enumerate(details)
-            if key in existing.casefold() or existing.casefold() in key
-        ]
-        if overlapping:
-            best_existing = max(
-                (details[index] for index in overlapping),
-                key=lambda value: (score(value), -len(value)),
+
+        lowered = segment.casefold()
+        is_free = "free delivery" in lowered or "free shipping" in lowered
+        is_prime = _is_prime_member_delivery_text(segment) or bool(
+            re.search(
+                r"\b(?:join\s+prime|with\s+prime|prime\s+members?)\b",
+                segment,
+                flags=re.IGNORECASE,
             )
-            if (score(candidate), -len(candidate)) <= (
-                score(best_existing),
-                -len(best_existing),
-            ):
-                continue
-            details = [
-                existing
-                for index, existing in enumerate(details)
-                if index not in overlapping
-            ]
-        details.append(candidate)
-    return " | ".join(details)[:600]
+        )
+        timing = _extract_delivery_detail(segment)
+        if not timing:
+            continue
+
+        parts: list[str] = []
+        if is_prime:
+            parts.append("Prime member")
+        if is_free:
+            parts.append("FREE delivery")
+        else:
+            parts.append("Delivery")
+        parts.append(timing)
+        normalized = " | ".join(parts)
+        score = (
+            (8 if is_prime else 0)
+            + (4 if is_free else 0)
+            + (3 if "overnight" in timing.casefold() else 0)
+            + (2 if "today" in timing.casefold() else 0)
+            + (1 if "tomorrow" in timing.casefold() else 0)
+        )
+        candidates.append((score, normalized))
+
+    if not candidates:
+        return ""
+    return max(candidates, key=lambda item: (item[0], len(item[1])))[1]
 
 
 def _qualified_fast_free_shipping_text(delivery_text: str) -> str:
@@ -873,12 +894,12 @@ def _qualified_fast_free_shipping_text(delivery_text: str) -> str:
 
 def _apply_delivery_text(product: Product, delivery_text: str) -> None:
     delivery_text = _clean_text(delivery_text)
-    delivery_lower = delivery_text.lower()
     unavailable_markers = ("cannot be shipped", "not deliverable", "unavailable")
-    product.delivery_options = _extract_delivery_options(delivery_text)
     product.delivery_detail = _shipping_detail_text(delivery_text)
-    product.delivery_available = bool(delivery_text) and not any(
-        marker in delivery_lower for marker in unavailable_markers
+    delivery_lower = product.delivery_detail.lower()
+    product.delivery_options = _extract_delivery_options(product.delivery_detail)
+    product.delivery_available = bool(product.delivery_detail) and not any(
+        marker in delivery_text.lower() for marker in unavailable_markers
     )
     product.free_shipping = (
         "free delivery" in delivery_lower or "free shipping" in delivery_lower
@@ -921,8 +942,13 @@ def _enrich_delivery_from_detail(
         return "missing"
     previous_free_shipping = product.free_shipping
     previous_options = product.delivery_options
+    previous_delivery_detail = product.delivery_detail
+    previous_delivery_available = product.delivery_available
     if delivery_text:
         _apply_delivery_text(product, delivery_text)
+    if not product.delivery_detail and previous_delivery_detail:
+        product.delivery_detail = previous_delivery_detail
+        product.delivery_available = previous_delivery_available
     product.free_shipping = previous_free_shipping or product.free_shipping
     if not product.delivery_options and previous_options:
         product.delivery_options = previous_options
@@ -936,6 +962,8 @@ def _enrich_delivery_from_detail(
             )
         product.delivery_available = True
         return "fresh"
+    if not product.delivery_detail:
+        return "missing"
     return "enriched"
 
 

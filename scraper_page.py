@@ -19,6 +19,7 @@ from access_control import AccessControlStore
 from amazon_scraper import (
     PRODUCT_COLUMNS,
     Product,
+    _shipping_detail_text,
     aggregate_csv_filename,
     scrape_keywords,
     slugify_filename,
@@ -427,6 +428,9 @@ def _results_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
         "variants",
     ):
         frame[column] = frame[column].fillna("").astype(str)
+    frame["delivery_detail"] = frame["delivery_detail"].map(
+        _display_delivery_detail
+    )
     for column in (
         "prime",
         "free_shipping",
@@ -436,6 +440,14 @@ def _results_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
     ):
         frame[column] = frame[column].fillna(False).astype(bool)
     return frame
+
+
+def _display_delivery_detail(value: object) -> str:
+    raw = str(value or "").strip()
+    if "fresh" in raw.casefold():
+        return raw
+    normalized = _shipping_detail_text(raw)
+    return normalized or "Không thấy thông tin ship"
 
 
 def _csv_bytes(frame: pd.DataFrame) -> bytes:

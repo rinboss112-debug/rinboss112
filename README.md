@@ -19,8 +19,11 @@ Web app Streamlit tiếng Việt để chạy tuần tự nhiều ngách Amazon,
   tiêu đề sản phẩm, không liệt kê toàn bộ lựa chọn của trang chi tiết.
 - Giữ cả sản phẩm thiếu giá hoặc thiếu thông tin ship; trường chưa đọc được được
   ghi rõ để có thể lọc lại trên giao diện.
-- Cột `delivery_detail` giữ nội dung giao hàng đọc được, bao gồm cả dấu hiệu
-  Prime/Fresh, Today/Tomorrow/Overnight và phí giao hàng nếu Amazon hiển thị.
+- Cột `delivery_detail` được chuẩn hóa thành dạng dễ lọc như
+  `Prime member | FREE delivery | Tomorrow, July 31` hoặc
+  `Prime member | FREE delivery | Overnight 7 AM - 11 AM`; Fresh được ghi riêng.
+  Nội dung biến thể, Subscribe & Save và `SNAP EBT eligible` không được đưa vào
+  cột giao hàng.
 - Bộ lọc kết quả gồm tên sản phẩm, ngách, tiền tệ, khoảng giá, đánh giá, Prime,
   Fresh, free/fast shipping, trạng thái giao hàng và thời gian Today/Tomorrow/Overnight.
 - Có hai nút tải riêng: CSV đúng phần đang lọc và CSV toàn bộ dữ liệu gốc.

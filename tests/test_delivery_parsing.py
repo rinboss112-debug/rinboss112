@@ -16,6 +16,7 @@ from amazon_scraper import (
     _is_prime_member_delivery_text,
     _qualified_delivery_fallback,
     _qualified_fast_free_shipping_text,
+    _shipping_detail_text,
     scrape_keyword,
 )
 
@@ -98,7 +99,7 @@ class DeliveryParsingTests(unittest.TestCase):
         self.assertEqual(product.delivery_options, "Overnight")
         self.assertEqual(
             product.delivery_detail,
-            "Or Prime members get FREE delivery Overnight 4 AM - 8 AM",
+            "Prime member | FREE delivery | Overnight 4 AM - 8 AM",
         )
         self.assertTrue(
             _is_prime_member_delivery_text(_combined_delivery_text_from_card(card))
@@ -141,7 +142,7 @@ class DeliveryParsingTests(unittest.TestCase):
         card = BeautifulSoup(search_html, "lxml").select_one("[data-asin]")
         product = _extract_product(card, "snack box")
         self.assertIsNotNone(product)
-        self.assertTrue(product.free_shipping)
+        self.assertFalse(product.free_shipping)
         self.assertEqual(product.delivery_options, "")
 
         session = _FakeSession(detail_html)
@@ -152,12 +153,45 @@ class DeliveryParsingTests(unittest.TestCase):
         self.assertEqual(product.delivery_options, "Overnight")
         self.assertEqual(
             product.delivery_detail,
-            "Prime members get FREE delivery Overnight 4 AM - 8 AM",
+            "Prime member | FREE delivery | Overnight 4 AM - 8 AM",
         )
         self.assertEqual(product.variants, "Size: 12 Count")
         self.assertEqual(
             session.requested_urls,
             ["https://www.amazon.com/gp/aw/d/B012345678?th=1&psc=1"],
+        )
+
+    def test_detail_page_does_not_overwrite_valid_search_shipping_with_slow_offer(
+        self,
+    ) -> None:
+        search_html = """
+        <div data-asin="B012345678">
+          <h2><a href="/dp/B012345678"><span>Healthy Snack Pack</span></a></h2>
+          <div data-cy="delivery-recipe">
+            Prime members get FREE delivery Today 10 AM - 3 PM
+          </div>
+        </div>
+        """
+        detail_html = """
+        <div id="mir-layout-DELIVERY_BLOCK">
+          FREE delivery Wednesday, August 5 on orders over $35
+          | Variety Pack 16.5 Fl Oz | SNAP EBT eligible
+        </div>
+        """
+        card = BeautifulSoup(search_html, "lxml").select_one("[data-asin]")
+        product = _extract_product(card, "snack box")
+        self.assertIsNotNone(product)
+        self.assertEqual(
+            product.delivery_detail,
+            "Prime member | FREE delivery | Today 10 AM - 3 PM",
+        )
+
+        status = _enrich_delivery_from_detail(_FakeSession(detail_html), product)
+
+        self.assertEqual(status, "enriched")
+        self.assertEqual(
+            product.delivery_detail,
+            "Prime member | FREE delivery | Today 10 AM - 3 PM",
         )
 
     def test_variant_parser_keeps_only_size_and_flavor_found_in_title(self) -> None:
@@ -239,8 +273,52 @@ class DeliveryParsingTests(unittest.TestCase):
         status = _enrich_delivery_from_detail(_FakeSession(detail_html), product)
 
         self.assertEqual(status, "fresh")
-        self.assertIn("Prime members get FREE delivery Tomorrow", product.delivery_detail)
+        self.assertIn(
+            "Prime member | FREE delivery | Tomorrow",
+            product.delivery_detail,
+        )
         self.assertIn("AmazonFresh", product.delivery_detail)
+
+    def test_shipping_detail_never_uses_variant_or_snap_text(self) -> None:
+        incorrect_texts = (
+            "Variety Pack 2 16.5 Fl Oz (Pack of 4) | SNAP EBT eligible",
+            "Caramel | SNAP EBT eligible",
+            "20 Fl Oz (Pack of 4)",
+            "Dark Chocolate 5.5 Fl Oz (Pack of 4)",
+            "Strawberry 22 Ounce (Pack of 1) | SNAP EBT eligible",
+        )
+        for text in incorrect_texts:
+            with self.subTest(text=text):
+                self.assertEqual(_shipping_detail_text(text), "")
+
+    def test_shipping_detail_normalizes_prime_free_and_delivery_time(self) -> None:
+        self.assertEqual(
+            _shipping_detail_text(
+                "Or Prime members get FREE delivery Today 10 AM - 3 PM "
+                "on eligible orders."
+            ),
+            "Prime member | FREE delivery | Today 10 AM - 3 PM",
+        )
+        self.assertEqual(
+            _shipping_detail_text(
+                "Join Prime to get FREE delivery Tomorrow, August 1"
+            ),
+            "Prime member | FREE delivery | Tomorrow, August 1",
+        )
+        self.assertEqual(
+            _shipping_detail_text(
+                "Prime member | FREE delivery | Overnight 7 AM - 11 AM"
+            ),
+            "Prime member | FREE delivery | Overnight 7 AM - 11 AM",
+        )
+
+    def test_detail_parser_ignores_variant_block_mislabelled_as_delivery(self) -> None:
+        html = """
+        <div id="mir-layout-DELIVERY_BLOCK">
+          Variety Pack 2 16.5 Fl Oz (Pack of 4) | SNAP EBT eligible
+        </div>
+        """
+        self.assertEqual(_delivery_text_from_detail_html(html), "")
 
     def test_scrape_keyword_keeps_cards_even_when_legacy_filters_do_not_match(
         self,
@@ -307,7 +385,7 @@ class DeliveryParsingTests(unittest.TestCase):
         self.assertEqual(status, "enriched")
         self.assertEqual(
             product.delivery_detail,
-            "FREE delivery Overnight 4 AM - 8 AM",
+            "FREE delivery | Overnight 4 AM - 8 AM",
         )
 
     def test_prime_matcher_accepts_with_prime_wording(self) -> None:
