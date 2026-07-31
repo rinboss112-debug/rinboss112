@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from bs4 import BeautifulSoup
 
@@ -15,6 +16,7 @@ from amazon_scraper import (
     _is_prime_member_delivery_text,
     _qualified_delivery_fallback,
     _qualified_fast_free_shipping_text,
+    scrape_keyword,
 )
 
 
@@ -34,6 +36,9 @@ class _FakeSession:
     def get(self, url: str, **_kwargs: object) -> _FakeResponse:
         self.requested_urls.append(url)
         return _FakeResponse(self.text)
+
+    def close(self) -> None:
+        return None
 
 
 class DeliveryParsingTests(unittest.TestCase):
@@ -209,7 +214,8 @@ class DeliveryParsingTests(unittest.TestCase):
         status = _enrich_delivery_from_detail(_FakeSession(detail_html), product)
 
         self.assertEqual(status, "fresh")
-        self.assertEqual(product.delivery_detail, "")
+        self.assertIn("AmazonFresh", product.delivery_detail)
+        self.assertTrue(product.delivery_available)
         self.assertEqual(product.variants, "")
 
     def test_detail_page_rejects_offer_when_fresh_is_also_present(self) -> None:
@@ -233,7 +239,52 @@ class DeliveryParsingTests(unittest.TestCase):
         status = _enrich_delivery_from_detail(_FakeSession(detail_html), product)
 
         self.assertEqual(status, "fresh")
-        self.assertEqual(product.delivery_detail, "")
+        self.assertIn("Prime members get FREE delivery Tomorrow", product.delivery_detail)
+        self.assertIn("AmazonFresh", product.delivery_detail)
+
+    def test_scrape_keyword_keeps_cards_even_when_legacy_filters_do_not_match(
+        self,
+    ) -> None:
+        search_html = """
+        <html><body>
+          <div data-component-type="s-search-result" data-asin="B000000001">
+            <h2><a href="/dp/B000000001"><span>Amazon Fresh Snack Box</span></a></h2>
+            <span class="a-price"><span class="a-offscreen">€4.99</span></span>
+            <div>Fresh delivery in two hours</div>
+          </div>
+          <div data-component-type="s-search-result" data-asin="B000000002">
+            <h2><a href="/dp/B000000002"><span>Snack Without Price</span></a></h2>
+          </div>
+          <div data-component-type="s-search-result" data-asin="B000000003">
+            <h2><a href="/dp/B000000003"><span>Slow Shipping Snack</span></a></h2>
+            <span class="a-price"><span class="a-offscreen">$9.99</span></span>
+            <div>Delivery next week for $6.99</div>
+          </div>
+        </body></html>
+        """
+        fake_session = _FakeSession(search_html)
+        with (
+            patch("amazon_scraper._build_session", return_value=fake_session),
+            patch("amazon_scraper._set_delivery_zip"),
+            patch("amazon_scraper._enrich_delivery_from_detail", return_value="missing"),
+        ):
+            products = scrape_keyword(
+                keyword="snack",
+                zip_code="92704",
+                minimum_price=100.0,
+                maximum_price=101.0,
+                max_pages=1,
+                max_products=10,
+                only_deliverable=True,
+                only_usd=True,
+            )
+
+        self.assertEqual([product.asin for product in products], [
+            "B000000001",
+            "B000000002",
+            "B000000003",
+        ])
+        self.assertEqual(products[1].delivery_detail, "Không thấy thông tin ship")
 
     def test_detail_page_keeps_non_prime_delivery(self) -> None:
         search_html = """

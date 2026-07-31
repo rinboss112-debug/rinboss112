@@ -417,9 +417,16 @@ def _results_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
     if frame.empty:
         return frame
     frame["price"] = pd.to_numeric(frame["price"], errors="coerce")
-    frame["delivery_options"] = frame["delivery_options"].fillna("").astype(str)
-    frame["delivery_detail"] = frame["delivery_detail"].fillna("").astype(str)
-    frame["variants"] = frame["variants"].fillna("").astype(str)
+    frame["rating"] = pd.to_numeric(frame["rating"], errors="coerce")
+    for column in (
+        "title",
+        "keyword",
+        "currency",
+        "delivery_options",
+        "delivery_detail",
+        "variants",
+    ):
+        frame[column] = frame[column].fillna("").astype(str)
     for column in (
         "prime",
         "free_shipping",
@@ -692,51 +699,130 @@ def _filter_results(frame: pd.DataFrame) -> pd.DataFrame:
     if frame.empty:
         return frame
     with st.container(border=True):
-        st.subheader("Bộ lọc kết quả", anchor=False)
-        keyword_options = ["Tất cả", *sorted(frame["keyword"].dropna().unique().tolist())]
-        filter_row = st.columns([1.8, 1, 1], vertical_alignment="bottom")
-        selected_keyword = filter_row[0].selectbox(
+        st.subheader("Bộ lọc dữ liệu", anchor=False)
+        st.caption(
+            "Bộ lọc chỉ thay đổi bảng và file CSV đang lọc; dữ liệu gốc vẫn được giữ nguyên."
+        )
+        keyword_options = [
+            "Tất cả",
+            *sorted(value for value in frame["keyword"].unique().tolist() if value),
+        ]
+        currency_values = sorted(
+            value for value in frame["currency"].unique().tolist() if value
+        )
+        filter_row = st.columns([1.6, 1.2, 1], vertical_alignment="bottom")
+        title_query = filter_row[0].text_input(
+            "Tìm trong tên sản phẩm",
+            placeholder="Ví dụ: snack, chocolate...",
+            key="result_title_query",
+        )
+        selected_keyword = filter_row[1].selectbox(
             "Tên ngách", keyword_options, key="result_keyword"
         )
-        filter_minimum = filter_row[1].number_input(
-            "Giá từ (USD)", min_value=0.0, value=0.0, step=1.0, key="result_minimum"
+        selected_currency = filter_row[2].selectbox(
+            "Tiền tệ",
+            ["Tất cả", *currency_values, "Không xác định"],
+            key="result_currency",
         )
-        filter_maximum = filter_row[2].number_input(
-            "Giá đến (USD, 0 = không giới hạn)",
+        numeric_row = st.columns(3, vertical_alignment="bottom")
+        filter_minimum = numeric_row[0].number_input(
+            "Giá từ",
+            min_value=0.0,
+            value=0.0,
+            step=1.0,
+            key="result_minimum",
+        )
+        filter_maximum = numeric_row[1].number_input(
+            "Giá đến (0 = không giới hạn)",
             min_value=0.0,
             value=0.0,
             step=1.0,
             key="result_maximum",
         )
+        filter_rating = numeric_row[2].number_input(
+            "Đánh giá tối thiểu",
+            min_value=0.0,
+            max_value=5.0,
+            value=0.0,
+            step=0.1,
+            key="result_rating",
+        )
         shipping_filters = st.pills(
-            "Điều kiện vận chuyển",
+            "Chọn các điều kiện cần giữ lại",
             [
+                "Prime",
                 "Free shipping",
                 "Fast shipping",
                 "Delivery available",
                 "Today",
                 "Tomorrow",
                 "Overnight",
+                "Fresh",
+                "Có thông tin ship",
+                "Không có thông tin ship",
+                "Có giá",
+                "Không có giá",
+                "Sponsored",
+                "Không Sponsored",
             ],
             selection_mode="multi",
             key="result_shipping_filters",
         ) or []
 
     filtered = frame.copy()
+    if title_query.strip():
+        filtered = filtered[
+            filtered["title"].str.contains(
+                title_query.strip(), case=False, regex=False, na=False
+            )
+        ]
     if selected_keyword != "Tất cả":
         filtered = filtered[filtered["keyword"] == selected_keyword]
+    if selected_currency == "Không xác định":
+        filtered = filtered[filtered["currency"].str.strip().eq("")]
+    elif selected_currency != "Tất cả":
+        filtered = filtered[filtered["currency"] == selected_currency]
     if filter_minimum > 0:
         filtered = filtered[filtered["price"].notna() & (filtered["price"] >= filter_minimum)]
     if filter_maximum > 0:
         filtered = filtered[filtered["price"].notna() & (filtered["price"] <= filter_maximum)]
+    if filter_rating > 0:
+        filtered = filtered[
+            filtered["rating"].notna() & (filtered["rating"] >= filter_rating)
+        ]
     boolean_mapping = {
+        "Prime": "prime",
         "Free shipping": "free_shipping",
         "Fast shipping": "fast_shipping",
         "Delivery available": "delivery_available",
     }
+    has_shipping = (
+        filtered["delivery_detail"].str.strip().ne("")
+        & ~filtered["delivery_detail"].str.fullmatch(
+            "Không thấy thông tin ship", case=False, na=False
+        )
+    )
     for label in shipping_filters:
         if label in boolean_mapping:
             filtered = filtered[filtered[boolean_mapping[label]]]
+        elif label == "Fresh":
+            filtered = filtered[
+                filtered["delivery_detail"].str.contains(
+                    r"\bfresh\b", case=False, regex=True, na=False
+                )
+            ]
+        elif label == "Có thông tin ship":
+            filtered = filtered[has_shipping.reindex(filtered.index, fill_value=False)]
+        elif label == "Không có thông tin ship":
+            filtered = filtered[~has_shipping.reindex(filtered.index, fill_value=False)]
+        elif label == "Có giá":
+            filtered = filtered[filtered["price"].notna()]
+        elif label == "Không có giá":
+            filtered = filtered[filtered["price"].isna()]
+        elif label == "Sponsored":
+            filtered = filtered[filtered["sponsored"]]
+        elif label == "Không Sponsored":
+            filtered = filtered[~filtered["sponsored"]]
         else:
             filtered = filtered[
                 filtered["delivery_options"].str.contains(
@@ -754,13 +840,18 @@ def _render_table(frame: pd.DataFrame) -> None:
         "variants",
         "delivery_detail",
         "keyword",
+        "asin",
         "product_url",
+        "currency",
         "rating",
         "review_count",
         "prime",
         "free_shipping",
         "fast_shipping",
         "delivery_available",
+        "delivery_options",
+        "sponsored",
+        "scraped_at",
     ]
     st.dataframe(
         frame,
@@ -781,15 +872,20 @@ def _render_table(frame: pd.DataFrame) -> None:
                 "Thông tin ship", width="large"
             ),
             "keyword": st.column_config.TextColumn("Ngách"),
+            "asin": st.column_config.TextColumn("ASIN"),
             "product_url": st.column_config.LinkColumn(
                 "Mở Amazon", display_text="Mở sản phẩm"
             ),
+            "currency": st.column_config.TextColumn("Tiền tệ"),
             "rating": st.column_config.NumberColumn("Đánh giá", format="%.1f ⭐"),
             "review_count": st.column_config.NumberColumn("Lượt đánh giá", format="localized"),
             "prime": st.column_config.CheckboxColumn("Prime"),
             "free_shipping": st.column_config.CheckboxColumn("Free ship"),
             "fast_shipping": st.column_config.CheckboxColumn("Giao nhanh"),
             "delivery_available": st.column_config.CheckboxColumn("Giao được"),
+            "delivery_options": st.column_config.TextColumn("Thời gian giao"),
+            "sponsored": st.column_config.CheckboxColumn("Sponsored"),
+            "scraped_at": st.column_config.TextColumn("Ngày cào"),
         },
         key="products_table",
     )
@@ -804,16 +900,16 @@ def _render_results_view(full_frame: pd.DataFrame, aggregate_filename: str) -> N
     _render_table(filtered_frame)
     with st.container(horizontal=True):
         st.download_button(
-            "Tải CSV đang lọc",
+            f"Tải phần đang lọc ({len(filtered_frame):,})",
             data=_csv_bytes(filtered_frame),
-            file_name="amazon_products_filtered.csv",
+            file_name=f"filtered_{aggregate_filename}",
             mime="text/csv",
             icon=":material/download:",
             on_click="ignore",
             disabled=filtered_frame.empty,
         )
         st.download_button(
-            "Tải toàn bộ kết quả gộp",
+            f"Tải toàn bộ dữ liệu gốc ({len(full_frame):,})",
             data=_csv_bytes(full_frame),
             file_name=aggregate_filename,
             mime="text/csv",
@@ -990,14 +1086,15 @@ with st.sidebar:
     keywords = _collect_keywords(uploaded_file, direct_text)
     st.caption(f"Đã nhận {len(keywords)} ngách duy nhất.")
 
-    price_columns = st.columns(2)
-    minimum_price_input = price_columns[0].number_input(
-        "Giá thấp nhất", min_value=0.0, value=0.0, step=1.0, key="minimum_price"
+    minimum_price_input = 0.0
+    maximum_price_input = 0.0
+    only_deliverable = False
+    only_usd = False
+    st.info(
+        "Tool sẽ giữ mọi sản phẩm đọc được. Giá, tiền tệ, Prime, Fresh và "
+        "vận chuyển được lọc sau khi cào; file dữ liệu gốc không bị mất dòng.",
+        icon=":material/filter_alt:",
     )
-    maximum_price_input = price_columns[1].number_input(
-        "Giá cao nhất", min_value=0.0, value=0.0, step=1.0, key="maximum_price"
-    )
-    st.caption("Để 0 nếu không muốn đặt giới hạn giá tương ứng.")
 
     st.session_state.setdefault("max_pages", 2)
     st.session_state.setdefault("max_products", 50)
@@ -1031,17 +1128,6 @@ with st.sidebar:
         step=5,
         key="max_products",
     )
-    only_deliverable = st.checkbox(
-        "Chỉ lấy sản phẩm giao được tới ZIP",
-        value=True,
-        disabled=True,
-        key="only_deliverable",
-    )
-    st.caption(
-        "Chỉ nhận sản phẩm có cùng một dòng ship gồm FREE delivery/free shipping "
-        "+ Today, Tomorrow hoặc Overnight. Không bắt buộc Prime; có Fresh là loại."
-    )
-    only_usd = st.checkbox("Chỉ lấy sản phẩm có giá USD", key="only_usd")
     file_mode = st.selectbox(
         "Khi file đã tồn tại",
         ["Ghi đè", "Tạo tên có timestamp"],
@@ -1098,8 +1184,6 @@ with st.sidebar:
         validation_error = "Vui lòng nhập ZIP Code."
     elif not keywords:
         validation_error = "Vui lòng tải file TXT hoặc nhập ít nhất một ngách."
-    elif maximum_price_input > 0 and minimum_price_input > maximum_price_input:
-        validation_error = "Giá thấp nhất không được lớn hơn giá cao nhất."
     elif access_identity and len(keywords) > access_identity["max_keywords_per_run"]:
         validation_error = (
             "Bạn chỉ được chạy tối đa "
