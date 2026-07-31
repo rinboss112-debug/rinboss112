@@ -6,11 +6,13 @@ from bs4 import BeautifulSoup
 
 from amazon_scraper import (
     PRODUCT_COLUMNS,
+    _combined_delivery_text_from_card,
     _delivery_text_from_detail_html,
     _enrich_delivery_from_detail,
     _extract_product,
     _extract_variants_from_detail_html,
     _is_excluded_amazon_brand_product,
+    _is_prime_member_delivery_text,
 )
 
 
@@ -88,6 +90,9 @@ class DeliveryParsingTests(unittest.TestCase):
         self.assertTrue(product.free_shipping)
         self.assertEqual(product.delivery_options, "Overnight")
         self.assertEqual(product.delivery_detail, "Overnight 4 AM - 8 AM")
+        self.assertTrue(
+            _is_prime_member_delivery_text(_combined_delivery_text_from_card(card))
+        )
 
     def test_detail_page_parser_reads_delivery_block_and_attributes(self) -> None:
         html = """
@@ -105,14 +110,14 @@ class DeliveryParsingTests(unittest.TestCase):
     def test_detail_page_enriches_cloud_search_card(self) -> None:
         search_html = """
         <div data-asin="B012345678">
-          <h2><a href="/dp/B012345678"><span>Healthy Snack Pack</span></a></h2>
+          <h2><a href="/dp/B012345678"><span>Healthy Snack Pack 12 Count</span></a></h2>
           <span class="a-price"><span class="a-offscreen">$19.99</span></span>
           <div data-cy="delivery-recipe">FREE delivery Monday</div>
         </div>
         """
         detail_html = """
         <div id="mir-layout-DELIVERY_BLOCK">
-          Get it Overnight 4 AM - 8 AM
+          Prime members get FREE delivery Overnight 4 AM - 8 AM
         </div>
         <div id="variation_size_name">
           <span class="a-form-label">Size:</span>
@@ -136,13 +141,13 @@ class DeliveryParsingTests(unittest.TestCase):
         self.assertTrue(product.free_shipping)
         self.assertEqual(product.delivery_options, "Overnight")
         self.assertEqual(product.delivery_detail, "Overnight 4 AM - 8 AM")
-        self.assertEqual(product.variants, "Size: 12 Count, 24 Count")
+        self.assertEqual(product.variants, "Size: 12 Count")
         self.assertEqual(
             session.requested_urls,
             ["https://www.amazon.com/gp/aw/d/B012345678?th=1&psc=1"],
         )
 
-    def test_variant_parser_combines_dom_and_script_dimensions(self) -> None:
+    def test_variant_parser_keeps_only_size_and_flavor_found_in_title(self) -> None:
         detail_html = """
         <div id="variation_size_name">
           <span class="a-form-label">Size:</span>
@@ -161,18 +166,62 @@ class DeliveryParsingTests(unittest.TestCase):
             },
             "variationValues": {
               "size_name": ["12 Count", "24 Count"],
-              "flavor_name": ["Chocolate", "Vanilla"]
+              "flavor_name": ["Chocolate", "Vanilla"],
+              "color_name": ["Red"]
             }
           }
         </script>
         """
         self.assertEqual(
-            _extract_variants_from_detail_html(detail_html),
-            (
-                "Size: 12 Count, 24 Count, 36 Count | "
-                "Flavor: Chocolate, Vanilla"
+            _extract_variants_from_detail_html(
+                detail_html,
+                "Chocolate snack bars, 24 Count",
             ),
+            "Size: 24 Count | Flavor: Chocolate",
         )
+
+    def test_detail_page_rejects_amazon_fresh_offer(self) -> None:
+        search_html = """
+        <div data-asin="B012345678">
+          <h2><a href="/dp/B012345678"><span>Organic Snack Box</span></a></h2>
+          <span class="a-price"><span class="a-offscreen">$19.99</span></span>
+        </div>
+        """
+        detail_html = """
+        <div id="mir-layout-DELIVERY_BLOCK">
+          FREE 2-hour delivery on orders over $100 with Prime
+        </div>
+        <div>Ships from AmazonFresh</div>
+        <div>Sold by AmazonFresh</div>
+        """
+        card = BeautifulSoup(search_html, "lxml").select_one("[data-asin]")
+        product = _extract_product(card, "snack box")
+        self.assertIsNotNone(product)
+
+        status = _enrich_delivery_from_detail(_FakeSession(detail_html), product)
+
+        self.assertEqual(status, "fresh")
+        self.assertEqual(product.variants, "")
+
+    def test_detail_page_requires_prime_members_delivery(self) -> None:
+        search_html = """
+        <div data-asin="B012345678">
+          <h2><a href="/dp/B012345678"><span>Organic Snack Box</span></a></h2>
+          <span class="a-price"><span class="a-offscreen">$19.99</span></span>
+        </div>
+        """
+        detail_html = """
+        <div id="mir-layout-DELIVERY_BLOCK">
+          FREE delivery Overnight 4 AM - 8 AM
+        </div>
+        """
+        card = BeautifulSoup(search_html, "lxml").select_one("[data-asin]")
+        product = _extract_product(card, "snack box")
+        self.assertIsNotNone(product)
+
+        status = _enrich_delivery_from_detail(_FakeSession(detail_html), product)
+
+        self.assertEqual(status, "not_prime")
 
 
 if __name__ == "__main__":

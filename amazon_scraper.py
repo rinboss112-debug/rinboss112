@@ -375,11 +375,23 @@ def _extract_delivery_text(card: Tag) -> str:
 def _delivery_fallback_from_card_text(card_text: str) -> str:
     """Recover delivery copy when Amazon changes the delivery element classes."""
     match = re.search(
+        r"(?:\b(?:or\s+)?prime\s+members?\s+(?:get\s+)?)?"
         r"\bfree\s+(?:delivery|shipping)\b.{0,240}",
         card_text,
         flags=re.IGNORECASE,
     )
     return _clean_text(match.group(0)) if match else ""
+
+
+def _combined_delivery_text_from_card(card: Tag) -> str:
+    card_text = _clean_text(card.get_text(" ", strip=True))
+    delivery_text = _extract_delivery_text(card)
+    fallback_delivery = _delivery_fallback_from_card_text(card_text)
+    if fallback_delivery and fallback_delivery.casefold() not in delivery_text.casefold():
+        delivery_text = " | ".join(
+            value for value in (delivery_text, fallback_delivery) if value
+        )
+    return delivery_text
 
 
 def _canonical_product_url(asin: str) -> str:
@@ -498,8 +510,8 @@ VARIANT_LABELS = {
     "unit_count": "Unit Count",
     "configuration": "Configuration",
 }
-MAX_VARIANT_GROUPS = 6
 MAX_VALUES_PER_VARIANT = 12
+TITLE_VARIANT_LABELS = {"size", "flavor"}
 
 
 def _variant_label(key: str, visible_label: str = "") -> str:
@@ -561,8 +573,19 @@ def _json_values_after_key(page_html: str, key: str) -> list[object]:
     return values
 
 
-def _extract_variants_from_detail_html(page_html: str) -> str:
-    """Return Amazon variation choices in one compact CSV-friendly field."""
+def _variant_value_matches_title(value: str, product_title: str) -> bool:
+    searchable_value = _normalized_brand_text(value)
+    searchable_title = _normalized_brand_text(product_title)
+    if not searchable_value or not searchable_title:
+        return False
+    return f" {searchable_value} " in f" {searchable_title} "
+
+
+def _extract_variants_from_detail_html(
+    page_html: str,
+    product_title: str,
+) -> str:
+    """Return only Size/Flavor values that are present in the product title."""
     soup = BeautifulSoup(page_html or "", "lxml")
     groups: dict[str, list[str]] = {}
     labels_by_key: dict[str, str] = {}
@@ -636,12 +659,59 @@ def _extract_variants_from_detail_html(page_html: str) -> str:
                     label = labels_by_key.get(key.casefold(), _variant_label(key))
                     _add_variant_value(groups.setdefault(label, []), value)
 
-    pieces = [
-        f"{label}: {', '.join(values)}"
-        for label, values in groups.items()
-        if label and values
-    ]
-    return " | ".join(pieces[:MAX_VARIANT_GROUPS])
+    pieces: list[str] = []
+    for label, values in groups.items():
+        if label.casefold() not in TITLE_VARIANT_LABELS:
+            continue
+        matching_values = [
+            value
+            for value in values
+            if _variant_value_matches_title(value, product_title)
+        ]
+        if matching_values:
+            pieces.append(f"{label}: {', '.join(matching_values)}")
+    return " | ".join(pieces)
+
+
+def _is_prime_member_delivery_text(delivery_text: str) -> bool:
+    normalized = _normalized_brand_text(delivery_text)
+    has_prime_member = re.search(r"\bprime members?\b", normalized) is not None
+    has_free_delivery = (
+        "free delivery" in normalized or "free shipping" in normalized
+    )
+    return has_prime_member and has_free_delivery
+
+
+def _is_fresh_delivery_offer(
+    delivery_text: str,
+    page_html: str = "",
+) -> bool:
+    normalized_delivery = _normalized_brand_text(delivery_text)
+    if any(
+        marker in normalized_delivery
+        for marker in (
+            "amazonfresh",
+            "amazon fresh",
+            "free 2 hour delivery",
+            "free two hour delivery",
+            "free grocery delivery",
+            "fresh delivery",
+        )
+    ):
+        return True
+
+    page_text = _normalized_brand_text(
+        BeautifulSoup(page_html or "", "lxml").get_text(" ", strip=True)
+    )
+    return any(
+        re.search(pattern, page_text) is not None
+        for pattern in (
+            r"\bships from amazonfresh\b",
+            r"\bsold by amazonfresh\b",
+            r"\bships from amazon fresh\b",
+            r"\bsold by amazon fresh\b",
+        )
+    )
 
 
 def _apply_delivery_text(product: Product, delivery_text: str) -> None:
@@ -665,8 +735,9 @@ def _enrich_delivery_from_detail(
 ) -> str:
     """Enrich delivery promises and product variants from one detail request.
 
-    Returns ``verified``, ``missing``, ``blocked`` or ``error`` so the caller can
-    stop detail requests when Amazon starts throttling the Cloud IP.
+    Returns ``verified``, ``fresh``, ``not_prime``, ``missing``, ``blocked`` or
+    ``error`` so the caller can filter delivery programs and stop detail
+    requests when Amazon starts throttling the Cloud IP.
     """
     try:
         detail_url = (
@@ -684,8 +755,14 @@ def _enrich_delivery_from_detail(
     if _looks_blocked(response.text):
         return "blocked"
 
-    product.variants = _extract_variants_from_detail_html(response.text)
     delivery_text = _delivery_text_from_detail_html(response.text)
+    if _is_fresh_delivery_offer(delivery_text, response.text):
+        return "fresh"
+
+    product.variants = _extract_variants_from_detail_html(
+        response.text,
+        product.title,
+    )
     if not delivery_text:
         return "missing"
     previous_free_shipping = product.free_shipping
@@ -697,8 +774,14 @@ def _enrich_delivery_from_detail(
         product.delivery_options = previous_options
         product.delivery_detail = previous_detail
     product.fast_shipping = bool(product.delivery_options)
-    if product.free_shipping and product.delivery_options:
+    if (
+        product.free_shipping
+        and product.delivery_options
+        and _is_prime_member_delivery_text(delivery_text)
+    ):
         return "verified"
+    if product.free_shipping and product.delivery_options:
+        return "not_prime"
     return "missing"
 
 
@@ -721,12 +804,7 @@ def _extract_product(card: Tag, keyword: str) -> Product | None:
     review_count = _parse_integer(review_text)
     card_text = _clean_text(card.get_text(" ", strip=True))
     card_lower = card_text.lower()
-    delivery_text = _extract_delivery_text(card)
-    fallback_delivery = _delivery_fallback_from_card_text(card_text)
-    if fallback_delivery and fallback_delivery.casefold() not in delivery_text.casefold():
-        delivery_text = " | ".join(
-            value for value in (delivery_text, fallback_delivery) if value
-        )
+    delivery_text = _combined_delivery_text_from_card(card)
     prime = card.select_one("i.a-icon-prime, [aria-label*='Prime']") is not None
     sponsored = "sponsored" in card_lower
 
@@ -860,6 +938,8 @@ def scrape_keyword(
                 "không đọc được": 0,
                 "trùng ASIN": 0,
                 "brand Amazon/365": 0,
+                "Amazon Fresh": 0,
+                "không có ship Prime members": 0,
                 "thiếu FREE": 0,
                 "thiếu Today/Tomorrow/Overnight": 0,
                 "ngoài khoảng giá": 0,
@@ -875,6 +955,17 @@ def scrape_keyword(
                     product.title, _card_brand_hint(card)
                 ):
                     rejected["brand Amazon/365"] += 1
+                    continue
+                card_delivery_text = _combined_delivery_text_from_card(card)
+                fresh_delivery_detected = _is_fresh_delivery_offer(
+                    card_delivery_text,
+                    str(card),
+                )
+                prime_member_delivery_confirmed = (
+                    _is_prime_member_delivery_text(card_delivery_text)
+                )
+                if fresh_delivery_detected:
+                    rejected["Amazon Fresh"] += 1
                     continue
                 if product.asin in seen_asins:
                     rejected["trùng ASIN"] += 1
@@ -919,7 +1010,10 @@ def scrape_keyword(
                     if product.variants:
                         variants_found_on_page += 1
                     if detail_status == "verified":
+                        prime_member_delivery_confirmed = True
                         detail_verified_on_page += 1
+                    elif detail_status == "fresh":
+                        fresh_delivery_detected = True
                     elif detail_status in {"blocked", "error"}:
                         detail_checks_remaining = 0
                         reason = (
@@ -932,6 +1026,9 @@ def scrape_keyword(
                             f"CẢNH BÁO: Dừng kiểm tra trang chi tiết vì {reason}; "
                             "không gửi thêm request trong ngách này.",
                         )
+                if fresh_delivery_detected:
+                    rejected["Amazon Fresh"] += 1
+                    continue
                 # This app only publishes genuinely free and urgent delivery offers.
                 if not product.free_shipping:
                     rejected["thiếu FREE"] += 1
@@ -960,7 +1057,7 @@ def scrape_keyword(
                         _log(
                             log_callback,
                             "Đang kiểm tra có giới hạn trang chi tiết để lấy "
-                            "biến thể Size/Flavor/Color của sản phẩm.",
+                            "Size/Flavor khớp với tiêu đề sản phẩm.",
                         )
                         detail_fallback_announced = True
                     if detail_requests_made:
@@ -972,7 +1069,10 @@ def scrape_keyword(
                     if product.variants:
                         variants_found_on_page += 1
                     if detail_status == "verified":
+                        prime_member_delivery_confirmed = True
                         detail_verified_on_page += 1
+                    elif detail_status == "fresh":
+                        fresh_delivery_detected = True
                     elif detail_status in {"blocked", "error"}:
                         detail_checks_remaining = 0
                         reason = (
@@ -986,6 +1086,12 @@ def scrape_keyword(
                             "các sản phẩm còn lại vẫn được lưu nhưng cột variants "
                             "có thể để trống.",
                         )
+                if fresh_delivery_detected:
+                    rejected["Amazon Fresh"] += 1
+                    continue
+                if not prime_member_delivery_confirmed:
+                    rejected["không có ship Prime members"] += 1
+                    continue
                 products.append(product)
                 accepted_on_page += 1
                 if len(products) >= max_products:
@@ -1000,8 +1106,9 @@ def scrape_keyword(
                 _log(
                     log_callback,
                     f"Kiểm tra trang chi tiết: {detail_attempts_on_page} sản phẩm, "
-                    f"xác minh được {detail_verified_on_page} sản phẩm FREE + "
-                    "Today/Tomorrow/Overnight, lấy được biến thể cho "
+                    f"xác minh được {detail_verified_on_page} sản phẩm Prime members + "
+                    "FREE + Today/Tomorrow/Overnight, lấy được Size/Flavor khớp "
+                    "tiêu đề cho "
                     f"{variants_found_on_page} sản phẩm.",
                 )
             rejection_summary = ", ".join(

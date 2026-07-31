@@ -14,11 +14,14 @@ Web app Streamlit tiếng Việt để chạy tuần tự nhiều ngách Amazon,
 - Lưu CSV riêng từng ngách và cập nhật file gộp theo ngách đầu tiên, ví dụ `snack_all_products.csv`, ngay lập tức.
 - Chuẩn hóa link sản phẩm thành `https://www.amazon.com/dp/ASIN` và bỏ tham số tracking.
 - Lấy link ảnh gốc, tự bỏ mã resize Amazon như `._AC_UL320_`.
-- Gộp các lựa chọn Size, Flavor, Color, Style, Package Quantity và biến thể khác
-  từ trang chi tiết vào một cột CSV `variants`.
+- Cột CSV `variants` chỉ giữ Size và Flavor có giá trị xuất hiện trong chính
+  tiêu đề sản phẩm, không liệt kê toàn bộ lựa chọn của trang chi tiết.
 - Loại sản phẩm thuộc Amazon, Amazon Fresh, Amazon Saver, Amazon Grocery và
   365/365 by Whole Foods Market mà không nhầm với nội dung giao hàng của Amazon.
-- Chỉ nhận sản phẩm vừa có `FREE delivery/free shipping` vừa có `Today`, `Tomorrow` hoặc `Overnight`.
+- Chỉ nhận sản phẩm có giao hàng `Prime members`, đồng thời có
+  `FREE delivery/free shipping` và `Today`, `Tomorrow` hoặc `Overnight`.
+- Loại Amazon Fresh, giao 2 giờ và grocery delivery kể cả khi ưu đãi đó dành
+  cho thành viên Prime.
 - Thông tin giao hàng được rút gọn thành nội dung hữu ích như `Overnight 4 AM - 8 AM`, không lấy quảng cáo Prime hay bộ đếm đặt hàng.
 - Có bộ đọc dự phòng khi Amazon đổi class HTML giao hàng và log thống kê từng lý do sản phẩm bị loại.
 - Đồng bộ CSV lên Google Drive ngay sau từng ngách.

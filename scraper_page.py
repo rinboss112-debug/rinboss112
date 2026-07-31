@@ -1038,8 +1038,8 @@ with st.sidebar:
         key="only_deliverable",
     )
     st.caption(
-        "Bắt buộc: chỉ giữ sản phẩm có FREE delivery/free shipping và có "
-        "Today, Tomorrow hoặc Overnight."
+        "Bắt buộc: chỉ giữ giao hàng FREE dành cho Prime members và có "
+        "Today, Tomorrow hoặc Overnight; Amazon Fresh/giao grocery bị loại."
     )
     only_usd = st.checkbox("Chỉ lấy sản phẩm có giá USD", key="only_usd")
     file_mode = st.selectbox(
