@@ -400,9 +400,10 @@ def _extract_delivery_text(card: Tag) -> str:
 def _delivery_fallback_from_card_text(card_text: str) -> str:
     """Recover delivery copy when Amazon changes the delivery element classes."""
     match = re.search(
-        r"(?:\bjoin\s+prime\s+to\s+get\s+|"
+        r"(?:(?:\bjoin\s+prime\s+to\s+get\s+|"
         r"\b(?:or\s+)?prime\s+members?\s+(?:get\s+)?)?"
-        r"\bfree\s+(?:delivery|shipping)\b.{0,240}",
+        r"\bfree\s+(?:delivery|shipping)\b|"
+        r"\b(?:or\s+)?fastest\s+delivery\b).{0,240}",
         card_text,
         flags=re.IGNORECASE,
     )
@@ -415,13 +416,23 @@ def _qualified_delivery_fallback(page_text: str) -> str:
         r"(?:\s+(?:by\s+)?\d{1,2}(?::\d{2})?\s*(?:AM|PM)"
         r"(?:\s*(?:-|–|—|to)\s*\d{1,2}(?::\d{2})?\s*(?:AM|PM))?)?"
     )
+    month = (
+        r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|"
+        r"Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|"
+        r"Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+    )
+    calendar_date = (
+        rf"{month}\s+\d{{1,2}}"
+        rf"(?:\s*(?:-|â€“|â€”|to)\s*(?:{month}\s+)?\d{{1,2}})?"
+    )
     timing = (
         rf"(?:overnight{time_window}"
         rf"|today(?:,\s*(?:[A-Za-z]+\s+)?\d{{1,2}})?{time_window}"
         rf"|tomorrow(?:,\s*(?:[A-Za-z]+\s+)?\d{{1,2}})?{time_window}"
         rf"|(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|"
         rf"Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?),?\s+"
-        rf"(?:[A-Za-z]{{3,9}}\s+)?\d{{1,2}}{time_window})"
+        rf"(?:[A-Za-z]{{3,9}}\s+)?\d{{1,2}}{time_window}"
+        rf"|{calendar_date})"
     )
     patterns = (
         rf"\bjoin\s+prime\s+to\s+get\s+"
@@ -431,6 +442,7 @@ def _qualified_delivery_fallback(page_text: str) -> str:
         rf"\bfree\s+(?:delivery|shipping)\s+{timing}"
         rf".{{0,160}}?\bwith\s+prime(?:\s+members?)?\b",
         rf"\bfree\s+(?:delivery|shipping)\s+{timing}",
+        rf"\b(?:or\s+)?fastest\s+delivery\s+{timing}",
     )
     for pattern in patterns:
         match = re.search(pattern, page_text, flags=re.IGNORECASE)
@@ -666,13 +678,20 @@ def _extract_all_delivery_times(delivery_text: str) -> str:
         r"(?:\s+(?:by\s+)?\d{1,2}(?::\d{2})?\s*(?:AM|PM)"
         r"(?:\s*(?:-|â€“|â€”|to)\s*\d{1,2}(?::\d{2})?\s*(?:AM|PM))?)?"
     )
+    month = (
+        r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|"
+        r"Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|"
+        r"Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+    )
     timing_pattern = re.compile(
         rf"\bovernight\b{time_window}"
         rf"|\b(?:today|tomorrow)\b"
         rf"(?:,\s*(?:[A-Za-z]+\s+)?\d{{1,2}})?{time_window}"
         rf"|\b(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|"
         rf"Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?)\b"
-        rf"(?:,?\s+(?:[A-Za-z]{{3,9}}\s+)?\d{{1,2}})?{time_window}",
+        rf"(?:,?\s+(?:[A-Za-z]{{3,9}}\s+)?\d{{1,2}})?{time_window}"
+        rf"|\b{month}\s+\d{{1,2}}"
+        rf"(?:\s*(?:-|â€“|â€”|to)\s*(?:{month}\s+)?\d{{1,2}})?\b",
         flags=re.IGNORECASE,
     )
 
@@ -687,10 +706,43 @@ def _extract_all_delivery_times(delivery_text: str) -> str:
         if not value:
             continue
         value = value[0].upper() + value[1:]
-        key = value.casefold()
+        prefix = delivery_text[max(0, match.start() - 180) : match.start()]
+        label = ""
+        label_patterns = (
+            (
+                "Non-member",
+                r"(?:or\s+)?non[\s-]*members?\s+(?:can\s+)?(?:get\s+)?"
+                r"free\s+(?:delivery|shipping)\s*$",
+            ),
+            (
+                "Prime",
+                r"(?:join\s+prime\s+to\s+get|"
+                r"(?:or\s+)?prime\s+members?\s+(?:can\s+)?(?:get\s+)?)"
+                r"\s*free\s+(?:delivery|shipping)\s*$",
+            ),
+            (
+                "Fastest delivery",
+                r"(?:or\s+)?fastest\s+delivery\s*$",
+            ),
+            (
+                "Fresh",
+                r"\b(?:amazon\s*)?fresh\b.{0,100}"
+                r"\bfree\s+(?:delivery|shipping)(?:\s*\|)?\s*$",
+            ),
+            (
+                "Free delivery",
+                r"\bfree\s+(?:delivery|shipping)(?:\s*\|)?\s*$",
+            ),
+        )
+        for candidate_label, pattern in label_patterns:
+            if re.search(pattern, prefix, flags=re.IGNORECASE):
+                label = candidate_label
+                break
+        display_value = f"{label}: {value}" if label else value
+        key = display_value.casefold()
         if key not in seen:
             seen.add(key)
-            values.append(value)
+            values.append(display_value)
     return " | ".join(values)
 
 
@@ -745,7 +797,28 @@ def _extract_delivery_detail(delivery_text: str) -> str:
         if key not in seen:
             seen.add(key)
             details.append(clean[0].upper() + clean[1:])
-    return ", ".join(details)
+    if details:
+        return ", ".join(details)
+
+    calendar_date = re.search(
+        r"\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|"
+        r"Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|"
+        r"Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}"
+        r"(?:\s*(?:-|â€“|â€”|to)\s*"
+        r"(?:(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|"
+        r"Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|"
+        r"Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+)?\d{1,2})?\b",
+        delivery_text,
+        flags=re.IGNORECASE,
+    )
+    if not calendar_date:
+        return ""
+    clean = (
+        _clean_text(calendar_date.group(0))
+        .replace("â€“", "-")
+        .replace("â€”", "-")
+    )
+    return clean[0].upper() + clean[1:]
 
 
 def _delivery_text_from_detail_html(page_html: str) -> str:
@@ -1199,6 +1272,7 @@ def _apply_delivery_text(product: Product, delivery_text: str) -> None:
             product.delivery_options,
             flags=re.IGNORECASE,
         )
+        or re.search(r"\bfastest\s+delivery\b", delivery_text, flags=re.IGNORECASE)
     )
     product.prime = product.prime or product.delivery_detail.startswith(
         "Prime member |"

@@ -97,7 +97,10 @@ class DeliveryParsingTests(unittest.TestCase):
 
         self.assertIsNotNone(product)
         self.assertTrue(product.free_shipping)
-        self.assertEqual(product.delivery_options, "Overnight 4 AM - 8 AM")
+        self.assertEqual(
+            product.delivery_options,
+            "Prime: Overnight 4 AM - 8 AM",
+        )
         self.assertEqual(
             product.delivery_detail,
             "Prime member | FREE delivery | Overnight 4 AM - 8 AM",
@@ -105,6 +108,48 @@ class DeliveryParsingTests(unittest.TestCase):
         self.assertTrue(
             _is_prime_member_delivery_text(_combined_delivery_text_from_card(card))
         )
+
+    def test_search_cards_keep_all_bold_delivery_dates_and_ranges(self) -> None:
+        prime_html = """
+        <div data-asin="B000000020">
+          <h2><a href="/dp/B000000020"><span>Chocolate Drink</span></a></h2>
+          <div class="new-amazon-delivery-layout">
+            <a>Join Prime</a> to get FREE delivery <b>Sun, Aug 2</b>
+            Or Non-members get FREE delivery <b>Wed, Aug 5</b>
+          </div>
+        </div>
+        """
+        range_html = """
+        <div data-asin="B000000021">
+          <h2><a href="/dp/B000000021"><span>Snack Pack</span></a></h2>
+          <div class="new-amazon-delivery-layout">
+            FREE delivery <b>Aug 9 - 13</b> on $35 of items shipped by Amazon
+            Or fastest delivery <b>Aug 9 - 10</b>
+          </div>
+        </div>
+        """
+
+        prime_card = BeautifulSoup(prime_html, "lxml").select_one("[data-asin]")
+        range_card = BeautifulSoup(range_html, "lxml").select_one("[data-asin]")
+        prime_product = _extract_product(prime_card, "chocolate")
+        range_product = _extract_product(range_card, "snack")
+
+        self.assertIsNotNone(prime_product)
+        self.assertEqual(
+            prime_product.delivery_options,
+            "Prime: Sun, Aug 2 | Non-member: Wed, Aug 5",
+        )
+        self.assertTrue(prime_product.free_shipping)
+        self.assertTrue(prime_product.prime)
+
+        self.assertIsNotNone(range_product)
+        self.assertEqual(
+            range_product.delivery_options,
+            "Free delivery: Aug 9 - 13 | Fastest delivery: Aug 9 - 10",
+        )
+        self.assertTrue(range_product.free_shipping)
+        self.assertTrue(range_product.fast_shipping)
+        self.assertTrue(range_product.delivery_available)
 
     def test_search_card_builds_link_from_asin_with_new_anchor_layout(self) -> None:
         html = """
@@ -252,7 +297,7 @@ class DeliveryParsingTests(unittest.TestCase):
         self.assertTrue(fresh_product.fast_shipping)
         self.assertEqual(
             fresh_product.delivery_options,
-            "Overnight 4 AM - 6 AM",
+            "Fresh: Overnight 4 AM - 6 AM",
         )
 
         self.assertIsNotNone(prime_product)
@@ -266,7 +311,7 @@ class DeliveryParsingTests(unittest.TestCase):
         self.assertFalse(prime_product.fast_shipping)
         self.assertEqual(
             prime_product.delivery_options,
-            "Sun, Aug 2 | Thu, Aug 6",
+            "Prime: Sun, Aug 2 | Non-member: Thu, Aug 6",
         )
 
     def test_shipping_detail_never_uses_variant_or_snap_text(self) -> None:

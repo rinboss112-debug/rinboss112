@@ -730,7 +730,7 @@ def _filter_results(
         currency_values = sorted(
             value for value in frame["currency"].unique().tolist() if value
         )
-        filter_row = st.columns([1.6, 1.2, 1], vertical_alignment="bottom")
+        filter_row = st.columns([1.6, 1.2, 1, 1.4], vertical_alignment="bottom")
         title_query = filter_row[0].text_input(
             "Tìm trong tên sản phẩm",
             placeholder="Ví dụ: snack, chocolate...",
@@ -743,6 +743,11 @@ def _filter_results(
             "Tiền tệ",
             ["Tất cả", *currency_values, "Không xác định"],
             key="result_currency",
+        )
+        delivery_time_query = filter_row[3].text_input(
+            "Tìm thời gian giao",
+            placeholder="Ví dụ: Overnight, Aug 9 - 13...",
+            key=f"result_delivery_time_{filter_scope}",
         )
         numeric_row = st.columns(3, vertical_alignment="bottom")
         filter_minimum = numeric_row[0].number_input(
@@ -794,6 +799,12 @@ def _filter_results(
         filtered = filtered[
             filtered["title"].str.contains(
                 title_query.strip(), case=False, regex=False, na=False
+            )
+        ]
+    if delivery_time_query.strip():
+        filtered = filtered[
+            filtered["delivery_options"].str.contains(
+                delivery_time_query.strip(), case=False, regex=False, na=False
             )
         ]
     if selected_keyword != "Tất cả":

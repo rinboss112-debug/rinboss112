@@ -21,7 +21,9 @@ Web app Streamlit tiếng Việt để chạy tuần tự nhiều ngách Amazon,
   ghi rõ để có thể lọc lại trên giao diện.
 - Bảng và CSV chỉ hiển thị cột thời gian giao, ví dụ `Today 2 PM - 6 PM`,
   `Tomorrow, Aug 1`, `Overnight 4 AM - 6 AM` hoặc
-  `Sun, Aug 2 | Thu, Aug 6`. Cột thông tin ship dài được giữ nội bộ để lọc
+  `Prime: Sun, Aug 2 | Non-member: Thu, Aug 6`; khoảng ngày như
+  `Free delivery: Aug 9 - 13 | Fastest delivery: Aug 9 - 10` cũng được giữ đầy đủ.
+  Cột thông tin ship dài được giữ nội bộ để lọc
   Prime/Fresh/free shipping nhưng không xuất ra bảng hoặc CSV.
 - Bộ lọc kết quả gồm tên sản phẩm, ngách, tiền tệ, khoảng giá, đánh giá, Prime,
   Fresh, free/fast shipping, trạng thái giao hàng và thời gian Today/Tomorrow/Overnight.
@@ -197,11 +199,15 @@ thay vì ghi hàng loạt CSV rỗng.
 Khi Amazon trả đúng thẻ kết quả, cột `delivery_options` chỉ chứa các mốc giao
 hàng, giữ tất cả mốc đọc được theo đúng thứ tự:
 
-- `Today 2 PM - 6 PM`
-- `Tomorrow, August 1`
-- `Overnight 7 AM - 11 AM`
-- `Sun, Aug 2`
-- `Tomorrow, Aug 1 | Wed, Aug 5`
+- `Prime: Today 2 PM - 6 PM`
+- `Prime: Tomorrow, August 1`
+- `Prime: Overnight 7 AM - 11 AM`
+- `Prime: Sun, Aug 2`
+- `Prime: Tomorrow, Aug 1 | Non-member: Wed, Aug 5`
+- `Free delivery: Aug 9 - 13 | Fastest delivery: Aug 9 - 10`
+
+Ô `Tìm thời gian giao` cho phép lọc trực tiếp theo bất kỳ ngày, giờ hoặc khoảng
+ngày nào đang hiển thị, ngoài các nút lọc nhanh Today/Tomorrow/Overnight.
 
 Để lấy ngày giao ổn định hơn, nên chạy scraper từ kết nối tại Mỹ hoặc một worker
 cục bộ có phiên trình duyệt và ZIP phù hợp, sau đó đồng bộ CSV lên Google Drive.
