@@ -895,7 +895,7 @@ def _render_table(frame: pd.DataFrame) -> None:
             "image_url": st.column_config.ImageColumn("Ảnh", width="small"),
             "price": st.column_config.NumberColumn("Giá", format="$%.2f"),
             "delivery_options": st.column_config.TextColumn(
-                "Thời gian giao", width="large"
+                "Thông tin giao hàng trên Amazon", width="large"
             ),
             "keyword": st.column_config.TextColumn("Ngách"),
             "asin": st.column_config.TextColumn("ASIN"),

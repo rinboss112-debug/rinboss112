@@ -9,6 +9,7 @@ from amazon_scraper import (
     CSV_COLUMNS,
     PRODUCT_COLUMNS,
     _combined_delivery_text_from_card,
+    _extract_full_delivery_offers,
     _extract_product,
     _find_search_cards,
     _is_excluded_amazon_brand_product,
@@ -99,7 +100,7 @@ class DeliveryParsingTests(unittest.TestCase):
         self.assertTrue(product.free_shipping)
         self.assertEqual(
             product.delivery_options,
-            "Prime: Overnight 4 AM - 8 AM",
+            "Or Prime members get FREE delivery Overnight 4 AM - 8 AM",
         )
         self.assertEqual(
             product.delivery_detail,
@@ -132,7 +133,8 @@ class DeliveryParsingTests(unittest.TestCase):
         )
         self.assertEqual(
             product.delivery_options,
-            "Prime: Overnight 4 AM - 8 AM",
+            "Join Prime to get FREE delivery Overnight 4 AM - 8 AM "
+            "on eligible orders",
         )
         self.assertNotIn("Tomorrow", product.delivery_options)
 
@@ -162,7 +164,8 @@ class DeliveryParsingTests(unittest.TestCase):
         self.assertEqual(product.asin, "B01BXU1RV6")
         self.assertEqual(
             product.delivery_options,
-            "Prime: Overnight 4 AM - 8 AM | Non-member: Wed, Aug 5",
+            "Join Prime to get FREE delivery Overnight 4 AM - 8 AM "
+            "on eligible orders | Or Non-members get FREE delivery Wed, Aug 5",
         )
         self.assertNotIn("Sun, Aug 2", product.delivery_options)
 
@@ -194,7 +197,8 @@ class DeliveryParsingTests(unittest.TestCase):
         self.assertIsNotNone(prime_product)
         self.assertEqual(
             prime_product.delivery_options,
-            "Prime: Sun, Aug 2 | Non-member: Wed, Aug 5",
+            "Join Prime to get FREE delivery Sun, Aug 2 | "
+            "Or Non-members get FREE delivery Wed, Aug 5",
         )
         self.assertTrue(prime_product.free_shipping)
         self.assertTrue(prime_product.prime)
@@ -202,7 +206,8 @@ class DeliveryParsingTests(unittest.TestCase):
         self.assertIsNotNone(range_product)
         self.assertEqual(
             range_product.delivery_options,
-            "Free delivery: Aug 9 - 13 | Fastest delivery: Aug 9 - 10",
+            "FREE delivery Aug 9 - 13 on $35 of items shipped by Amazon | "
+            "Or fastest delivery Aug 9 - 10",
         )
         self.assertTrue(range_product.free_shipping)
         self.assertTrue(range_product.fast_shipping)
@@ -312,7 +317,11 @@ class DeliveryParsingTests(unittest.TestCase):
         )
         self.assertFalse(product.prime)
         self.assertFalse(product.fast_shipping)
-        self.assertEqual(product.delivery_options, "")
+        self.assertEqual(
+            product.delivery_options,
+            "Fresh | FREE delivery | Orders over $100 with Prime | "
+            "Ships from: AmazonFresh | Sold by: AmazonFresh",
+        )
 
     def test_fresh_and_join_prime_cards_are_distinguished(self) -> None:
         fresh_html = """
@@ -354,7 +363,9 @@ class DeliveryParsingTests(unittest.TestCase):
         self.assertTrue(fresh_product.fast_shipping)
         self.assertEqual(
             fresh_product.delivery_options,
-            "Fresh: Overnight 4 AM - 6 AM",
+            "Fresh | FREE delivery | Overnight 4 AM - 6 AM | "
+            "Orders over $100 with Prime | Ships from: AmazonFresh | "
+            "Sold by: AmazonFresh",
         )
 
         self.assertIsNotNone(prime_product)
@@ -368,7 +379,21 @@ class DeliveryParsingTests(unittest.TestCase):
         self.assertFalse(prime_product.fast_shipping)
         self.assertEqual(
             prime_product.delivery_options,
-            "Prime: Sun, Aug 2 | Non-member: Thu, Aug 6",
+            "Join Prime to get FREE delivery Sun, Aug 2 | "
+            "Or Non-members get FREE delivery Thu, Aug 6 on $35 of items "
+            "shipped by Amazon",
+        )
+
+    def test_full_delivery_offer_keeps_both_complete_visible_sentences(self) -> None:
+        raw_text = (
+            "Join Prime to get FREE delivery Overnight 4 AM - 8 AM "
+            "on eligible orders Or Non-members get FREE delivery Wed, Aug 5"
+        )
+
+        self.assertEqual(
+            _extract_full_delivery_offers(raw_text),
+            "Join Prime to get FREE delivery Overnight 4 AM - 8 AM "
+            "on eligible orders | Or Non-members get FREE delivery Wed, Aug 5",
         )
 
     def test_shipping_detail_never_uses_variant_or_snap_text(self) -> None:

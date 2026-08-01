@@ -397,8 +397,70 @@ def _extract_delivery_text(card: Tag) -> str:
     return " | ".join(pieces)
 
 
+def _extract_full_delivery_offers(delivery_text: str) -> str:
+    """Keep complete visible Amazon delivery promises in source order."""
+    cleaned = _clean_text(delivery_text)
+    if not cleaned:
+        return ""
+
+    time_window = (
+        r"(?:\s+(?:by\s+)?\d{1,2}(?::\d{2})?\s*(?:AM|PM)"
+        r"(?:\s*(?:-|–|—|to)\s*\d{1,2}(?::\d{2})?\s*(?:AM|PM))?)?"
+    )
+    month = (
+        r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|"
+        r"Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|"
+        r"Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+    )
+    timing = (
+        rf"(?:overnight{time_window}"
+        rf"|(?:today|tomorrow)(?:,\s*(?:[A-Za-z]+\s+)?\d{{1,2}})?"
+        rf"{time_window}"
+        rf"|(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|"
+        rf"Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?),?\s+"
+        rf"(?:[A-Za-z]{{3,9}}\s+)?\d{{1,2}}{time_window}"
+        rf"|{month}\s+\d{{1,2}}"
+        rf"(?:\s*(?:-|–|—|to)\s*(?:{month}\s+)?\d{{1,2}})?)"
+    )
+    eligible_suffix = r"(?:\s+on\s+eligible\s+orders)?"
+    threshold_suffix = (
+        r"(?:\s+on\s+\$\s*\d+(?:[.,]\d{1,2})?\s+of\s+items\s+"
+        r"shipped\s+by\s+Amazon)?"
+    )
+    offer_pattern = re.compile(
+        rf"(?:"
+        rf"(?:Join\s+Prime\s+to\s+get\s+|"
+        rf"(?:Or\s+)?Prime\s+members?\s+(?:can\s+)?(?:get\s+)?)"
+        rf"FREE\s+(?:delivery|shipping)\s+{timing}{eligible_suffix}"
+        rf"|(?:Or\s+)?Non[\s-]*members?\s+(?:can\s+)?(?:get\s+)?"
+        rf"FREE\s+(?:delivery|shipping)\s+{timing}{threshold_suffix}"
+        rf"|FREE\s+(?:delivery|shipping)\s+{timing}{threshold_suffix}"
+        rf"|(?:Or\s+)?fastest\s+delivery\s+{timing}"
+        rf")",
+        flags=re.IGNORECASE,
+    )
+
+    offers: list[str] = []
+    seen: set[str] = set()
+    for match in offer_pattern.finditer(cleaned):
+        offer = (
+            _clean_text(match.group(0))
+            .replace("–", "-")
+            .replace("—", "-")
+            .rstrip(" .|")
+        )
+        key = offer.casefold()
+        if offer and key not in seen:
+            seen.add(key)
+            offers.append(offer)
+    return " | ".join(offers)
+
+
 def _delivery_fallback_from_card_text(card_text: str) -> str:
     """Recover delivery copy when Amazon changes the delivery element classes."""
+    complete_offers = _extract_full_delivery_offers(card_text)
+    if complete_offers:
+        return complete_offers
     match = re.search(
         r"(?:(?:\bjoin\s+prime\s+to\s+get\s+|"
         r"\b(?:or\s+)?prime\s+members?\s+(?:get\s+)?)?"
@@ -1305,7 +1367,10 @@ def _apply_delivery_text(product: Product, delivery_text: str) -> None:
     unavailable_markers = ("cannot be shipped", "not deliverable", "unavailable")
     product.delivery_detail = _shipping_detail_text(delivery_text)
     delivery_lower = product.delivery_detail.lower()
-    product.delivery_options = _extract_all_delivery_times(delivery_text)
+    product.delivery_options = (
+        _extract_full_delivery_offers(delivery_text)
+        or _extract_all_delivery_times(delivery_text)
+    )
     product.delivery_available = bool(product.delivery_detail) and not any(
         marker in delivery_text.lower() for marker in unavailable_markers
     )
@@ -1374,7 +1439,7 @@ def _extract_product(card: Tag, keyword: str) -> Product | None:
     fresh_shipping = _extract_fresh_shipping_text(delivery_text, str(card))
     if fresh_shipping:
         product.delivery_detail = fresh_shipping
-        product.delivery_options = _extract_all_delivery_times(fresh_shipping)
+        product.delivery_options = fresh_shipping
         product.delivery_available = True
         product.free_shipping = "free" in delivery_text.casefold()
         product.fast_shipping = bool(
