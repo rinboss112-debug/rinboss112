@@ -6,6 +6,7 @@ from unittest.mock import patch
 from bs4 import BeautifulSoup
 
 from amazon_scraper import (
+    CSV_COLUMNS,
     PRODUCT_COLUMNS,
     _combined_delivery_text_from_card,
     _extract_product,
@@ -72,12 +73,13 @@ class DeliveryParsingTests(unittest.TestCase):
             )
         )
 
-    def test_csv_has_no_variant_column(self) -> None:
+    def test_csv_has_delivery_time_but_no_shipping_detail_or_variants(self) -> None:
         self.assertEqual(
-            PRODUCT_COLUMNS[:5],
-            ["title", "image_url", "price", "delivery_detail", "keyword"],
+            CSV_COLUMNS[:5],
+            ["title", "image_url", "price", "delivery_options", "keyword"],
         )
-        self.assertNotIn("variants", PRODUCT_COLUMNS)
+        self.assertNotIn("delivery_detail", CSV_COLUMNS)
+        self.assertNotIn("variants", CSV_COLUMNS)
 
     def test_search_card_reads_prime_shipping_from_unknown_html_class(self) -> None:
         html = """
@@ -95,7 +97,7 @@ class DeliveryParsingTests(unittest.TestCase):
 
         self.assertIsNotNone(product)
         self.assertTrue(product.free_shipping)
-        self.assertEqual(product.delivery_options, "Overnight")
+        self.assertEqual(product.delivery_options, "Overnight 4 AM - 8 AM")
         self.assertEqual(
             product.delivery_detail,
             "Prime member | FREE delivery | Overnight 4 AM - 8 AM",
@@ -247,8 +249,11 @@ class DeliveryParsingTests(unittest.TestCase):
         )
         self.assertTrue(fresh_product.free_shipping)
         self.assertFalse(fresh_product.prime)
-        self.assertFalse(fresh_product.fast_shipping)
-        self.assertEqual(fresh_product.delivery_options, "")
+        self.assertTrue(fresh_product.fast_shipping)
+        self.assertEqual(
+            fresh_product.delivery_options,
+            "Overnight 4 AM - 6 AM",
+        )
 
         self.assertIsNotNone(prime_product)
         self.assertEqual(
@@ -259,7 +264,10 @@ class DeliveryParsingTests(unittest.TestCase):
         self.assertTrue(prime_product.free_shipping)
         self.assertTrue(prime_product.prime)
         self.assertFalse(prime_product.fast_shipping)
-        self.assertEqual(prime_product.delivery_options, "")
+        self.assertEqual(
+            prime_product.delivery_options,
+            "Sun, Aug 2 | Thu, Aug 6",
+        )
 
     def test_shipping_detail_never_uses_variant_or_snap_text(self) -> None:
         incorrect_texts = (

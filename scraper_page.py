@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import re
 import threading
 import time
 import uuid
@@ -17,6 +18,7 @@ import streamlit as st
 
 from access_control import AccessControlStore
 from amazon_scraper import (
+    CSV_COLUMNS,
     PRODUCT_COLUMNS,
     Product,
     _shipping_detail_text,
@@ -450,7 +452,8 @@ def _display_delivery_detail(value: object) -> str:
 
 
 def _csv_bytes(frame: pd.DataFrame) -> bytes:
-    return frame.to_csv(index=False).encode("utf-8-sig")
+    export_columns = [column for column in CSV_COLUMNS if column in frame.columns]
+    return frame.loc[:, export_columns].to_csv(index=False).encode("utf-8-sig")
 
 
 def _format_duration(seconds: float) -> str:
@@ -843,7 +846,7 @@ def _filter_results(
         else:
             filtered = filtered[
                 filtered["delivery_options"].str.contains(
-                    rf"(?:^|, ){label}(?:, |$)", regex=True, na=False
+                    rf"\b{re.escape(label)}\b", case=False, regex=True, na=False
                 )
             ]
     return filtered
@@ -854,7 +857,7 @@ def _render_table(frame: pd.DataFrame) -> None:
         "title",
         "image_url",
         "price",
-        "delivery_detail",
+        "delivery_options",
         "keyword",
         "asin",
         "product_url",
@@ -865,7 +868,6 @@ def _render_table(frame: pd.DataFrame) -> None:
         "free_shipping",
         "fast_shipping",
         "delivery_available",
-        "delivery_options",
         "sponsored",
         "scraped_at",
     ]
@@ -881,8 +883,8 @@ def _render_table(frame: pd.DataFrame) -> None:
             ),
             "image_url": st.column_config.ImageColumn("Ảnh", width="small"),
             "price": st.column_config.NumberColumn("Giá", format="$%.2f"),
-            "delivery_detail": st.column_config.TextColumn(
-                "Thông tin ship", width="large"
+            "delivery_options": st.column_config.TextColumn(
+                "Thời gian giao", width="large"
             ),
             "keyword": st.column_config.TextColumn("Ngách"),
             "asin": st.column_config.TextColumn("ASIN"),
@@ -896,7 +898,6 @@ def _render_table(frame: pd.DataFrame) -> None:
             "free_shipping": st.column_config.CheckboxColumn("Free ship"),
             "fast_shipping": st.column_config.CheckboxColumn("Giao nhanh"),
             "delivery_available": st.column_config.CheckboxColumn("Giao được"),
-            "delivery_options": st.column_config.TextColumn("Thời gian giao"),
             "sponsored": st.column_config.CheckboxColumn("Sponsored"),
             "scraped_at": st.column_config.TextColumn("Ngày cào"),
         },
@@ -985,9 +986,9 @@ def _render_statistics_view(frame: pd.DataFrame) -> None:
                 int(frame["free_shipping"].sum()),
                 int(frame["fast_shipping"].sum()),
                 int(frame["delivery_available"].sum()),
-                int(delivery_options.str.contains(r"(?:^|, )Today(?:, |$)").sum()),
-                int(delivery_options.str.contains(r"(?:^|, )Tomorrow(?:, |$)").sum()),
-                int(delivery_options.str.contains(r"(?:^|, )Overnight(?:, |$)").sum()),
+                int(delivery_options.str.contains(r"\bToday\b", case=False).sum()),
+                int(delivery_options.str.contains(r"\bTomorrow\b", case=False).sum()),
+                int(delivery_options.str.contains(r"\bOvernight\b", case=False).sum()),
             ],
         }
     )

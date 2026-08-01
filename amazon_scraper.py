@@ -62,6 +62,18 @@ class Product:
 
 
 PRODUCT_COLUMNS = [field_name for field_name in Product.__annotations__]
+CSV_COLUMNS = [
+    "title",
+    "image_url",
+    "price",
+    "delivery_options",
+    *(
+        field_name
+        for field_name in PRODUCT_COLUMNS
+        if field_name
+        not in {"title", "image_url", "price", "delivery_options", "delivery_detail"}
+    ),
+]
 EXCLUDED_AMAZON_BRAND_PREFIXES = (
     "amazon",
     "amazon brand",
@@ -129,7 +141,7 @@ def _timestamped_path(path: Path) -> Path:
 def _products_frame(products: Sequence[Product]) -> pd.DataFrame:
     return pd.DataFrame(
         [product.to_dict() for product in products],
-        columns=PRODUCT_COLUMNS,
+        columns=CSV_COLUMNS,
     )
 
 
@@ -645,6 +657,43 @@ def _extract_delivery_options(delivery_text: str) -> str:
     return ""
 
 
+def _extract_all_delivery_times(delivery_text: str) -> str:
+    """Return every delivery day/time in source order without shipping copy."""
+    if not delivery_text:
+        return ""
+
+    time_window = (
+        r"(?:\s+(?:by\s+)?\d{1,2}(?::\d{2})?\s*(?:AM|PM)"
+        r"(?:\s*(?:-|â€“|â€”|to)\s*\d{1,2}(?::\d{2})?\s*(?:AM|PM))?)?"
+    )
+    timing_pattern = re.compile(
+        rf"\bovernight\b{time_window}"
+        rf"|\b(?:today|tomorrow)\b"
+        rf"(?:,\s*(?:[A-Za-z]+\s+)?\d{{1,2}})?{time_window}"
+        rf"|\b(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|"
+        rf"Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?)\b"
+        rf"(?:,?\s+(?:[A-Za-z]{{3,9}}\s+)?\d{{1,2}})?{time_window}",
+        flags=re.IGNORECASE,
+    )
+
+    values: list[str] = []
+    seen: set[str] = set()
+    for match in timing_pattern.finditer(delivery_text):
+        value = (
+            _clean_text(match.group(0))
+            .replace("â€“", "-")
+            .replace("â€”", "-")
+        )
+        if not value:
+            continue
+        value = value[0].upper() + value[1:]
+        key = value.casefold()
+        if key not in seen:
+            seen.add(key)
+            values.append(value)
+    return " | ".join(values)
+
+
 def _extract_delivery_detail(delivery_text: str) -> str:
     """Keep only the useful Today/Tomorrow/Overnight phrase from Amazon text."""
     if not delivery_text:
@@ -1137,14 +1186,20 @@ def _apply_delivery_text(product: Product, delivery_text: str) -> None:
     unavailable_markers = ("cannot be shipped", "not deliverable", "unavailable")
     product.delivery_detail = _shipping_detail_text(delivery_text)
     delivery_lower = product.delivery_detail.lower()
-    product.delivery_options = _extract_delivery_options(product.delivery_detail)
+    product.delivery_options = _extract_all_delivery_times(delivery_text)
     product.delivery_available = bool(product.delivery_detail) and not any(
         marker in delivery_text.lower() for marker in unavailable_markers
     )
     product.free_shipping = (
         "free delivery" in delivery_lower or "free shipping" in delivery_lower
     )
-    product.fast_shipping = bool(product.delivery_options)
+    product.fast_shipping = bool(
+        re.search(
+            r"\b(?:today|tomorrow|overnight)\b",
+            product.delivery_options,
+            flags=re.IGNORECASE,
+        )
+    )
     product.prime = product.prime or product.delivery_detail.startswith(
         "Prime member |"
     )
@@ -1199,10 +1254,16 @@ def _extract_product(card: Tag, keyword: str) -> Product | None:
     fresh_shipping = _extract_fresh_shipping_text(delivery_text, str(card))
     if fresh_shipping:
         product.delivery_detail = fresh_shipping
-        product.delivery_options = ""
+        product.delivery_options = _extract_all_delivery_times(fresh_shipping)
         product.delivery_available = True
         product.free_shipping = "free" in delivery_text.casefold()
-        product.fast_shipping = False
+        product.fast_shipping = bool(
+            re.search(
+                r"\b(?:today|tomorrow|overnight)\b",
+                product.delivery_options,
+                flags=re.IGNORECASE,
+            )
+        )
         product.prime = False
     else:
         _apply_delivery_text(product, delivery_text)

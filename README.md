@@ -19,13 +19,10 @@ Web app Streamlit tiếng Việt để chạy tuần tự nhiều ngách Amazon,
   chi tiết sản phẩm và không lấy biến thể; nhờ vậy số request thấp hơn.
 - Giữ cả sản phẩm thiếu giá hoặc thiếu thông tin ship; trường chưa đọc được được
   ghi rõ để có thể lọc lại trên giao diện.
-- Cột `delivery_detail` được chuẩn hóa thành dạng dễ lọc như
-  `Prime member | FREE delivery | Tomorrow, July 31` hoặc
-  `Prime member | FREE delivery | Overnight 7 AM - 11 AM`; Fresh được ghi cùng
-  cột nhưng tách loại rõ ràng, ví dụ
-  `Fresh | FREE delivery | Overnight 4 AM - 6 AM | Orders over $100 with Prime`.
-  Nội dung biến thể, Subscribe & Save và `SNAP EBT eligible` không được đưa vào
-  cột giao hàng.
+- Bảng và CSV chỉ hiển thị cột thời gian giao, ví dụ `Today 2 PM - 6 PM`,
+  `Tomorrow, Aug 1`, `Overnight 4 AM - 6 AM` hoặc
+  `Sun, Aug 2 | Thu, Aug 6`. Cột thông tin ship dài được giữ nội bộ để lọc
+  Prime/Fresh/free shipping nhưng không xuất ra bảng hoặc CSV.
 - Bộ lọc kết quả gồm tên sản phẩm, ngách, tiền tệ, khoảng giá, đánh giá, Prime,
   Fresh, free/fast shipping, trạng thái giao hàng và thời gian Today/Tomorrow/Overnight.
 - Có hai nút tải riêng: CSV đúng phần đang lọc và CSV toàn bộ dữ liệu gốc.
@@ -197,15 +194,14 @@ Nếu Amazon trả `Robot Check`, `Sorry! Something went wrong!`, HTTP 429/503 h
 trang trung gian không có ASIN, app sẽ báo lỗi chẩn đoán và dừng các ngách còn lại
 thay vì ghi hàng loạt CSV rỗng.
 
-Khi Amazon trả đúng thẻ kết quả, cột `delivery_detail` được phân loại độc lập:
+Khi Amazon trả đúng thẻ kết quả, cột `delivery_options` chỉ chứa các mốc giao
+hàng, giữ tất cả mốc đọc được theo đúng thứ tự:
 
-- `Prime member | FREE delivery | Today 2 PM - 6 PM`
-- `Prime member | FREE delivery | Tomorrow, August 1`
-- `Prime member | FREE delivery | Overnight 7 AM - 11 AM`
-- `Prime member | FREE delivery | Sun, Aug 2`
-- `Prime member | FREE delivery | Tomorrow, Aug 1 | Non-member | FREE delivery | Wed, Aug 5`
-- `Fresh | FREE delivery | Overnight 4 AM - 6 AM | Orders over $100 with Prime`
-- `Fresh | Ships from: AmazonFresh | Sold by: AmazonFresh`
+- `Today 2 PM - 6 PM`
+- `Tomorrow, August 1`
+- `Overnight 7 AM - 11 AM`
+- `Sun, Aug 2`
+- `Tomorrow, Aug 1 | Wed, Aug 5`
 
 Để lấy ngày giao ổn định hơn, nên chạy scraper từ kết nối tại Mỹ hoặc một worker
 cục bộ có phiên trình duyệt và ZIP phù hợp, sau đó đồng bộ CSV lên Google Drive.
