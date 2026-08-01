@@ -1147,11 +1147,11 @@ with st.sidebar:
     only_deliverable = False
     only_usd = False
     include_variants = st.toggle(
-        "Lấy biến thể Size/Flavor từ trang chi tiết",
+        "Tự điền Size/Flavor từ tiêu đề",
         value=True,
         help=(
-            "Chỉ giữ Flavor Name và Size khớp với tiêu đề. Tùy chọn này "
-            "chậm hơn và tạo thêm yêu cầu tới Amazon."
+            "Không mở trang chi tiết. Size được chuẩn hóa; Flavor Name chỉ "
+            "được điền khi tiêu đề thể hiện đủ rõ."
         ),
         key="include_variants",
     )

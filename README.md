@@ -15,8 +15,8 @@ Web app Streamlit tiếng Việt để chạy tuần tự nhiều ngách Amazon,
 - Lưu CSV riêng từng ngách và cập nhật file gộp theo ngách đầu tiên, ví dụ `snack_all_products.csv`, ngay lập tức.
 - Chuẩn hóa link sản phẩm thành `https://www.amazon.com/dp/ASIN` và bỏ tham số tracking.
 - Lấy link ảnh gốc, tự bỏ mã resize Amazon như `._AC_UL320_`.
-- Có tùy chọn mở trang chi tiết để lấy đúng `Flavor Name` và `Size`; chỉ giữ giá
-  trị khớp với tiêu đề sản phẩm. Có thể tắt tùy chọn này để giảm số request.
+- Có tùy chọn tự điền `Flavor Name` và `Size` trực tiếp từ tiêu đề, không mở trang
+  chi tiết và không tạo thêm request. Giá trị không đủ chắc chắn sẽ được để trống.
 - Giữ cả sản phẩm thiếu giá hoặc thiếu thông tin ship; trường chưa đọc được được
   ghi rõ để có thể lọc lại trên giao diện.
 - Bảng và CSV giữ nguyên câu giao hàng Amazon hiển thị, ví dụ

@@ -25,7 +25,6 @@ from urllib3.util.retry import Retry
 AMAZON_BASE_URL = "https://www.amazon.com"
 DEFAULT_TIMEOUT_SECONDS = 30
 DEFAULT_DELAY_SECONDS = 1.25
-DETAIL_DELAY_SECONDS = 0.35
 ASIN_PATTERN = re.compile(r"^[A-Z0-9]{10}$", flags=re.IGNORECASE)
 
 LogCallback = Callable[[str], None]
@@ -1113,6 +1112,116 @@ def _variant_value_matches_title(value: str, product_title: str) -> bool:
     )
 
 
+TITLE_SIZE_PATTERN = re.compile(
+    r"(?P<amount>\d+(?:[.,]\d+)?)\s*"
+    r"(?P<unit>fl\.?\s*oz\.?|fluid\s+ounces?|ounces?|oz\.?|"
+    r"pounds?|lbs?\.?|kilograms?|kg\.?|grams?|g\.?|"
+    r"milliliters?|ml\.?|liters?|l\.?|count|ct\.?)\b"
+    r"(?:\s*\(\s*pack\s+of\s+(?P<pack>\d+)\s*\))?",
+    flags=re.IGNORECASE,
+)
+
+
+def _normalized_size_unit(unit: str) -> str:
+    normalized = re.sub(r"[^a-z]", "", unit.casefold())
+    unit_names = {
+        "floz": "Fl Oz",
+        "fluidounce": "Fl Oz",
+        "fluidounces": "Fl Oz",
+        "ounce": "Ounce",
+        "ounces": "Ounce",
+        "oz": "Ounce",
+        "pound": "Pound",
+        "pounds": "Pound",
+        "lb": "Pound",
+        "lbs": "Pound",
+        "kilogram": "Kilogram",
+        "kilograms": "Kilogram",
+        "kg": "Kilogram",
+        "gram": "Gram",
+        "grams": "Gram",
+        "g": "Gram",
+        "milliliter": "Milliliter",
+        "milliliters": "Milliliter",
+        "ml": "Milliliter",
+        "liter": "Liter",
+        "liters": "Liter",
+        "l": "Liter",
+        "count": "Count",
+        "ct": "Count",
+    }
+    return unit_names.get(normalized, unit.title())
+
+
+def _title_flavor_candidate(product_title: str) -> str:
+    explicit = re.search(
+        r"\bflavou?r(?:\s+name)?\s*[:\-]\s*([^,|;]+)",
+        product_title,
+        flags=re.IGNORECASE,
+    )
+    if explicit:
+        candidate = explicit.group(1)
+    else:
+        brand_pattern = re.search(
+            r"^.{1,80}?\bbrand\b\s*[-:]?\s*([^,|;]+)",
+            product_title,
+            flags=re.IGNORECASE,
+        )
+        if brand_pattern:
+            candidate = brand_pattern.group(1)
+        else:
+            flavored_segment = re.search(
+                r"(?:^|[,|;])\s*([^,|;]{2,80}?)\s+flavou?red\b",
+                product_title,
+                flags=re.IGNORECASE,
+            )
+            flavor_segment = re.search(
+                r"(?:^|[,|;])\s*([^,|;]{2,80}?)\s+flavou?r\b",
+                product_title,
+                flags=re.IGNORECASE,
+            )
+            match = flavored_segment or flavor_segment
+            if not match:
+                return ""
+            candidate = match.group(1)
+
+    candidate = re.sub(
+        r"\s+flavou?r(?:ed)?\s*$",
+        "",
+        _clean_text(candidate),
+        flags=re.IGNORECASE,
+    )
+    candidate = TITLE_SIZE_PATTERN.split(candidate, maxsplit=1)[0]
+    candidate = candidate.strip(" -:|,.;")
+    if (
+        not candidate
+        or len(candidate) > 80
+        or not re.search(r"[A-Za-z]", candidate)
+    ):
+        return ""
+    return candidate
+
+
+def _infer_variants_from_title(product_title: str) -> str:
+    """Conservatively infer listing-ready Flavor Name and Size from a title."""
+    title = _clean_text(product_title)
+    if not title:
+        return ""
+
+    pieces: list[str] = []
+    flavor = _title_flavor_candidate(title)
+    if flavor:
+        pieces.append(f"Flavor Name: {flavor}")
+
+    size_match = TITLE_SIZE_PATTERN.search(title)
+    if size_match:
+        amount = size_match.group("amount").replace(",", ".")
+        unit = _normalized_size_unit(size_match.group("unit"))
+        pack = size_match.group("pack") or "1"
+        pieces.append(f"Size: {amount} {unit} (Pack of {pack})")
+    return " | ".join(pieces)
+
+
 def _extract_variants_from_detail_html(
     page_html: str,
     product_title: str,
@@ -1499,44 +1608,6 @@ def _extract_product(card: Tag, keyword: str) -> Product | None:
     return product
 
 
-def _load_product_variants(
-    session: requests.Session,
-    product: Product,
-    referer: str,
-    log_callback: LogCallback | None = None,
-) -> bool:
-    """Load selected Size/Flavor from a detail page; return False if blocked."""
-    try:
-        response = session.get(
-            product.product_url,
-            headers={"Referer": referer},
-            timeout=DEFAULT_TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-    except requests.RequestException as error:
-        _log(
-            log_callback,
-            f"CẢNH BÁO: Không đọc được biến thể ASIN {product.asin}: {error}",
-        )
-        return not bool(
-            re.search(r"\b(?:429|503)\b|too many .* responses", str(error))
-        )
-
-    if _looks_blocked(response.text):
-        _log(
-            log_callback,
-            "CẢNH BÁO: Amazon chặn trang chi tiết; dừng lấy biến thể cho "
-            "các sản phẩm còn lại trong ngách.",
-        )
-        return False
-
-    product.variants = _extract_variants_from_detail_html(
-        response.text,
-        product.title,
-    )
-    return True
-
-
 def _looks_blocked(page_text: str) -> bool:
     lowered = page_text.lower()
     return any(
@@ -1623,8 +1694,7 @@ def scrape_keyword(
         if include_variants:
             _log(
                 log_callback,
-                "Có lấy biến thể: mở trang chi tiết và chỉ giữ Flavor Name/Size "
-                "khớp với tiêu đề.",
+                "Tự điền Flavor Name/Size từ tiêu đề; không mở trang chi tiết.",
             )
         else:
             _log(
@@ -1632,7 +1702,6 @@ def scrape_keyword(
                 "Chỉ đọc thẻ sản phẩm trên trang kết quả; không mở trang chi tiết.",
             )
         _set_delivery_zip(session, zip_code, log_callback)
-        variant_requests_enabled = include_variants
 
         for page_number in range(1, max_pages + 1):
             if len(products) >= max_products:
@@ -1689,15 +1758,8 @@ def scrape_keyword(
                     rejected["trùng ASIN"] += 1
                     continue
                 seen_asins.add(product.asin)
-                if variant_requests_enabled:
-                    variant_requests_enabled = _load_product_variants(
-                        session,
-                        product,
-                        search_url,
-                        log_callback,
-                    )
-                    if variant_requests_enabled:
-                        time.sleep(DETAIL_DELAY_SECONDS)
+                if include_variants:
+                    product.variants = _infer_variants_from_title(product.title)
                 if product.delivery_detail:
                     shipping_found_on_page += 1
                 else:

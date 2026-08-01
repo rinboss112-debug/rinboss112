@@ -13,6 +13,7 @@ from amazon_scraper import (
     _extract_product,
     _extract_variants_from_detail_html,
     _find_search_cards,
+    _infer_variants_from_title,
     _is_excluded_amazon_brand_product,
     _is_prime_member_delivery_text,
     _qualified_delivery_fallback,
@@ -42,15 +43,13 @@ class _FakeResponse:
 
 
 class _FakeSession:
-    def __init__(self, text: str, detail_text: str = "") -> None:
+    def __init__(self, text: str) -> None:
         self.text = text
-        self.detail_text = detail_text
         self.requested_urls: list[str] = []
 
     def get(self, url: str, **_kwargs: object) -> _FakeResponse:
         self.requested_urls.append(url)
-        text = self.detail_text if "/dp/" in url and self.detail_text else self.text
-        return _FakeResponse(text, url=url)
+        return _FakeResponse(self.text, url=url)
 
     def close(self) -> None:
         return None
@@ -125,7 +124,27 @@ class DeliveryParsingTests(unittest.TestCase):
             "Size: 3.5 Ounce (Pack of 1)",
         )
 
-    def test_scrape_keyword_enriches_variant_column_when_enabled(self) -> None:
+    def test_title_inference_builds_listing_variant_without_detail_page(self) -> None:
+        title = (
+            "Squirrel Brand Sweet Brown Butter Cashews, 3.5 oz Resealable Bag | "
+            "Gourmet Flavored Cashews Nuts, Gluten Free, Vegetarian"
+        )
+
+        self.assertEqual(
+            _infer_variants_from_title(title),
+            "Flavor Name: Sweet Brown Butter Cashews | "
+            "Size: 3.5 Ounce (Pack of 1)",
+        )
+
+    def test_title_inference_keeps_explicit_pack_count(self) -> None:
+        self.assertEqual(
+            _infer_variants_from_title(
+                "Coffee Pods, Flavor: Dark Roast, 1.2 Ounce (Pack of 12)"
+            ),
+            "Flavor Name: Dark Roast | Size: 1.2 Ounce (Pack of 12)",
+        )
+
+    def test_scrape_keyword_autofills_variants_without_detail_request(self) -> None:
         title = (
             "Squirrel Brand Sweet Brown Butter Cashews, 3.5 oz Resealable Bag | "
             "Gourmet Flavored Cashews Nuts, Gluten Free, Vegetarian"
@@ -137,21 +156,7 @@ class DeliveryParsingTests(unittest.TestCase):
           </div>
         </body></html>
         """
-        detail_html = """
-        <html><body><script>
-        var data = {
-          "variationDisplayLabels": {
-            "flavor_name": "Flavor Name",
-            "size_name": "Size"
-          },
-          "variationValues": {
-            "flavor_name": ["Sweet Brown Butter Cashews", "Maple Glazed"],
-            "size_name": ["3.5 Ounce (Pack of 1)", "10 Ounce (Pack of 1)"]
-          }
-        };
-        </script></body></html>
-        """
-        fake_session = _FakeSession(search_html, detail_html)
+        fake_session = _FakeSession(search_html)
         with (
             patch("amazon_scraper._build_session", return_value=fake_session),
             patch("amazon_scraper._set_delivery_zip"),
@@ -176,10 +181,7 @@ class DeliveryParsingTests(unittest.TestCase):
         )
         self.assertEqual(
             fake_session.requested_urls,
-            [
-                "https://www.amazon.com/s?k=cashews&page=1",
-                "https://www.amazon.com/dp/B000000099",
-            ],
+            ["https://www.amazon.com/s?k=cashews&page=1"],
         )
 
     def test_search_card_reads_prime_shipping_from_unknown_html_class(self) -> None:
