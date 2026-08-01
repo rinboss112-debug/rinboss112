@@ -458,11 +458,23 @@ def _qualified_delivery_fallback(page_text: str) -> str:
 def _combined_delivery_text_from_card(card: Tag) -> str:
     card_text = _clean_text(card.get_text(" ", strip=True))
     delivery_text = _extract_delivery_text(card)
-    fallback_delivery = _delivery_fallback_from_card_text(card_text)
-    if fallback_delivery and fallback_delivery.casefold() not in delivery_text.casefold():
-        delivery_text = " | ".join(
-            value for value in (delivery_text, fallback_delivery) if value
+    if (
+        delivery_text
+        and re.search(
+            r"\b(?:amazon\s*)?fresh\b",
+            card_text,
+            flags=re.IGNORECASE,
         )
+    ):
+        return delivery_text
+
+    fallback_delivery = _delivery_fallback_from_card_text(card_text)
+    # Amazon sometimes leaves stale/different delivery values in data-csa
+    # attributes. The visible sentence on the result card is the source of
+    # truth; attributes are only a fallback when no visible timing is present.
+    if fallback_delivery and _extract_all_delivery_times(fallback_delivery):
+        return fallback_delivery
+
     qualified_fallback = _qualified_delivery_fallback(card_text)
     if (
         qualified_fallback

@@ -109,6 +109,33 @@ class DeliveryParsingTests(unittest.TestCase):
             _is_prime_member_delivery_text(_combined_delivery_text_from_card(card))
         )
 
+    def test_visible_overnight_promise_wins_over_hidden_attribute(self) -> None:
+        html = """
+        <div data-asin="B000000030">
+          <h2><a href="/dp/B000000030"><span>Visible Shipping Product</span></a></h2>
+          <div class="new-amazon-delivery-layout">
+            Join Prime to get FREE delivery
+            <b>Overnight 4 AM - 8 AM</b> on eligible orders
+          </div>
+          <span data-csa-c-delivery-price="FREE"
+                data-csa-c-delivery-time="Tomorrow, Aug 9"></span>
+        </div>
+        """
+        card = BeautifulSoup(html, "lxml").select_one("[data-asin]")
+        product = _extract_product(card, "snack")
+
+        self.assertIsNotNone(product)
+        self.assertEqual(
+            _combined_delivery_text_from_card(card),
+            "Join Prime to get FREE delivery Overnight 4 AM - 8 AM "
+            "on eligible orders",
+        )
+        self.assertEqual(
+            product.delivery_options,
+            "Prime: Overnight 4 AM - 8 AM",
+        )
+        self.assertNotIn("Tomorrow", product.delivery_options)
+
     def test_search_cards_keep_all_bold_delivery_dates_and_ranges(self) -> None:
         prime_html = """
         <div data-asin="B000000020">

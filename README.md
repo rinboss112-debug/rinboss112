@@ -208,6 +208,8 @@ hàng, giữ tất cả mốc đọc được theo đúng thứ tự:
 
 Ô `Tìm thời gian giao` cho phép lọc trực tiếp theo bất kỳ ngày, giờ hoặc khoảng
 ngày nào đang hiển thị, ngoài các nút lọc nhanh Today/Tomorrow/Overnight.
+Nếu câu giao hàng đang hiển thị và thuộc tính HTML ẩn của Amazon khác nhau, app
+ưu tiên câu đang hiển thị trên thẻ sản phẩm để tránh lấy nhầm thời gian cũ.
 
 Để lấy ngày giao ổn định hơn, nên chạy scraper từ kết nối tại Mỹ hoặc một worker
 cục bộ có phiên trình duyệt và ZIP phù hợp, sau đó đồng bộ CSV lên Google Drive.
