@@ -8,8 +8,9 @@ Web app Streamlit tiếng Việt để chạy tuần tự nhiều ngách Amazon,
 
 - Nhập ZIP Code, tải TXT hoặc nhập ngách trực tiếp; tự bỏ dòng trùng.
 - Xem trước danh sách ngách trước khi chạy.
-- Cào rộng mọi thẻ sản phẩm đọc được trong số trang/sản phẩm đã chọn; không loại
-  trước theo giá, tiền tệ, brand, Prime, Fresh hoặc điều kiện giao hàng.
+- Cào rộng các thẻ sản phẩm đọc được nhưng luôn loại brand Amazon, Amazon Fresh,
+  Amazon Saver, Amazon Grocery và nhóm 365; các điều kiện giá, tiền tệ, Prime,
+  Fresh hoặc giao hàng chỉ được lọc khi xem/tải kết quả.
 - Worker nền, log/progress trực tiếp, ETA và dừng sau ngách hiện tại.
 - Mỗi phiên có `run_id` và thư mục riêng, không ghi chung giữa các phiên.
 - Lưu CSV riêng từng ngách và cập nhật file gộp theo ngách đầu tiên, ví dụ `snack_all_products.csv`, ngay lập tức.

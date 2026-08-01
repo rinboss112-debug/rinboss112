@@ -1156,8 +1156,8 @@ with st.sidebar:
         key="include_variants",
     )
     st.info(
-        "Tool sẽ giữ mọi sản phẩm đọc được. Giá, tiền tệ, Prime, Fresh và "
-        "vận chuyển được lọc sau khi cào; file dữ liệu gốc không bị mất dòng.",
+        "Tool loại các brand Amazon/Amazon Fresh/Amazon Saver/Amazon Grocery "
+        "và nhóm 365. Giá, tiền tệ, Prime, Fresh và vận chuyển được lọc sau.",
         icon=":material/filter_alt:",
     )
     st.caption(

@@ -76,6 +76,43 @@ class DeliveryParsingTests(unittest.TestCase):
             )
         )
 
+    def test_scrape_keyword_removes_requested_amazon_and_365_brands(self) -> None:
+        search_html = """
+        <html><body>
+          <div data-component-type="s-search-result" data-asin="B000000071">
+            <h2><span>Amazon Fresh Strawberry Snack Bars</span></h2>
+          </div>
+          <div data-component-type="s-search-result" data-asin="B000000072">
+            <h2><span>365 by Whole Foods Market Organic Trail Mix</span></h2>
+          </div>
+          <div data-component-type="s-search-result" data-asin="B000000073">
+            <h2><span>Phone Stand Compatible with Amazon Echo</span></h2>
+            <div data-brand="Independent Brand"></div>
+          </div>
+        </body></html>
+        """
+        fake_session = _FakeSession(search_html)
+        logs: list[str] = []
+        with (
+            patch("amazon_scraper._build_session", return_value=fake_session),
+            patch("amazon_scraper._set_delivery_zip"),
+        ):
+            products = scrape_keyword(
+                keyword="snacks",
+                zip_code="92704",
+                minimum_price=None,
+                maximum_price=None,
+                max_pages=1,
+                max_products=10,
+                only_deliverable=False,
+                log_callback=logs.append,
+            )
+
+        self.assertEqual([product.asin for product in products], ["B000000073"])
+        self.assertTrue(
+            any("brand Amazon/365=2" in message for message in logs)
+        )
+
     def test_csv_has_variants_and_delivery_but_no_internal_shipping_detail(self) -> None:
         self.assertEqual(
             CSV_COLUMNS[:6],

@@ -1688,8 +1688,8 @@ def scrape_keyword(
         _log(log_callback, f"Bắt đầu ngách '{keyword}'.")
         _log(
             log_callback,
-            "Chế độ cào rộng: giữ mọi sản phẩm đọc được; bộ lọc chỉ áp dụng "
-            "khi xem hoặc tải kết quả.",
+            "Chế độ cào rộng: chỉ loại các brand Amazon/365 đã chặn; giá, "
+            "tiền tệ và giao hàng được lọc khi xem hoặc tải kết quả.",
         )
         if include_variants:
             _log(
@@ -1748,11 +1748,18 @@ def scrape_keyword(
             rejected = {
                 "không đọc được": 0,
                 "trùng ASIN": 0,
+                "brand Amazon/365": 0,
             }
             for card in cards:
                 product = _extract_product(card, keyword)
                 if product is None:
                     rejected["không đọc được"] += 1
+                    continue
+                if _is_excluded_amazon_brand_product(
+                    product.title,
+                    _card_brand_hint(card),
+                ):
+                    rejected["brand Amazon/365"] += 1
                     continue
                 if product.asin in seen_asins:
                     rejected["trùng ASIN"] += 1
