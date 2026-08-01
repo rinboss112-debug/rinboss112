@@ -11,6 +11,7 @@ from amazon_scraper import (
     _combined_delivery_text_from_card,
     _extract_full_delivery_offers,
     _extract_product,
+    _extract_variants_from_detail_html,
     _find_search_cards,
     _is_excluded_amazon_brand_product,
     _is_prime_member_delivery_text,
@@ -41,13 +42,15 @@ class _FakeResponse:
 
 
 class _FakeSession:
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str, detail_text: str = "") -> None:
         self.text = text
+        self.detail_text = detail_text
         self.requested_urls: list[str] = []
 
     def get(self, url: str, **_kwargs: object) -> _FakeResponse:
         self.requested_urls.append(url)
-        return _FakeResponse(self.text, url=url)
+        text = self.detail_text if "/dp/" in url and self.detail_text else self.text
+        return _FakeResponse(text, url=url)
 
     def close(self) -> None:
         return None
@@ -74,13 +77,110 @@ class DeliveryParsingTests(unittest.TestCase):
             )
         )
 
-    def test_csv_has_delivery_time_but_no_shipping_detail_or_variants(self) -> None:
+    def test_csv_has_variants_and_delivery_but_no_internal_shipping_detail(self) -> None:
         self.assertEqual(
-            CSV_COLUMNS[:5],
-            ["title", "image_url", "price", "delivery_options", "keyword"],
+            CSV_COLUMNS[:6],
+            [
+                "title",
+                "image_url",
+                "price",
+                "variants",
+                "delivery_options",
+                "keyword",
+            ],
         )
         self.assertNotIn("delivery_detail", CSV_COLUMNS)
-        self.assertNotIn("variants", CSV_COLUMNS)
+        self.assertIn("variants", CSV_COLUMNS)
+
+    def test_variants_keep_only_size_and_flavor_matching_title(self) -> None:
+        title = (
+            "Squirrel Brand Sweet Brown Butter Cashews, 3.5 oz Resealable Bag | "
+            "Gourmet Flavored Cashews Nuts, Gluten Free, Vegetarian"
+        )
+        detail_html = """
+        <html><body><script>
+        var data = {
+          "variationDisplayLabels": {
+            "flavor_name": "Flavor Name",
+            "size_name": "Size"
+          },
+          "variationValues": {
+            "flavor_name": [
+              "Sweet Brown Butter Cashews",
+              "Maple Glazed Cashews"
+            ],
+            "size_name": [
+              "3.5 Ounce (Pack of 1)",
+              "3.5 Ounce (Pack of 2)",
+              "10 Ounce (Pack of 1)"
+            ]
+          }
+        };
+        </script></body></html>
+        """
+
+        self.assertEqual(
+            _extract_variants_from_detail_html(detail_html, title),
+            "Flavor Name: Sweet Brown Butter Cashews | "
+            "Size: 3.5 Ounce (Pack of 1)",
+        )
+
+    def test_scrape_keyword_enriches_variant_column_when_enabled(self) -> None:
+        title = (
+            "Squirrel Brand Sweet Brown Butter Cashews, 3.5 oz Resealable Bag | "
+            "Gourmet Flavored Cashews Nuts, Gluten Free, Vegetarian"
+        )
+        search_html = f"""
+        <html><body>
+          <div data-component-type="s-search-result" data-asin="B000000099">
+            <h2><a href="/dp/B000000099"><span>{title}</span></a></h2>
+          </div>
+        </body></html>
+        """
+        detail_html = """
+        <html><body><script>
+        var data = {
+          "variationDisplayLabels": {
+            "flavor_name": "Flavor Name",
+            "size_name": "Size"
+          },
+          "variationValues": {
+            "flavor_name": ["Sweet Brown Butter Cashews", "Maple Glazed"],
+            "size_name": ["3.5 Ounce (Pack of 1)", "10 Ounce (Pack of 1)"]
+          }
+        };
+        </script></body></html>
+        """
+        fake_session = _FakeSession(search_html, detail_html)
+        with (
+            patch("amazon_scraper._build_session", return_value=fake_session),
+            patch("amazon_scraper._set_delivery_zip"),
+            patch("amazon_scraper.time.sleep"),
+        ):
+            products = scrape_keyword(
+                keyword="cashews",
+                zip_code="92704",
+                minimum_price=None,
+                maximum_price=None,
+                max_pages=1,
+                max_products=1,
+                only_deliverable=False,
+                include_variants=True,
+            )
+
+        self.assertEqual(len(products), 1)
+        self.assertEqual(
+            products[0].variants,
+            "Flavor Name: Sweet Brown Butter Cashews | "
+            "Size: 3.5 Ounce (Pack of 1)",
+        )
+        self.assertEqual(
+            fake_session.requested_urls,
+            [
+                "https://www.amazon.com/s?k=cashews&page=1",
+                "https://www.amazon.com/dp/B000000099",
+            ],
+        )
 
     def test_search_card_reads_prime_shipping_from_unknown_html_class(self) -> None:
         html = """

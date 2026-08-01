@@ -49,6 +49,7 @@ class RunConfig:
     max_products: int
     only_deliverable: bool
     only_usd: bool
+    include_variants: bool
     overwrite_existing: bool
     requested_by_id: str = ""
     requested_by: str = ""
@@ -65,6 +66,7 @@ class RunConfig:
             "max_products": self.max_products,
             "only_deliverable": self.only_deliverable,
             "only_usd": self.only_usd,
+            "include_variants": self.include_variants,
             "overwrite_existing": self.overwrite_existing,
             "requested_by_id": self.requested_by_id,
             "requested_by": self.requested_by,
@@ -425,6 +427,7 @@ def _results_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
         "title",
         "keyword",
         "currency",
+        "variants",
         "delivery_options",
         "delivery_detail",
     ):
@@ -613,6 +616,7 @@ def _run_job(controller: RunController, config: RunConfig) -> None:
             max_products=config.max_products,
             only_deliverable=config.only_deliverable,
             only_usd=config.only_usd,
+            include_variants=config.include_variants,
             output_dir=config.output_dir,
             overwrite_existing=config.overwrite_existing,
             progress_callback=controller.update_progress,
@@ -868,6 +872,7 @@ def _render_table(frame: pd.DataFrame) -> None:
         "title",
         "image_url",
         "price",
+        "variants",
         "delivery_options",
         "keyword",
         "asin",
@@ -894,6 +899,7 @@ def _render_table(frame: pd.DataFrame) -> None:
             ),
             "image_url": st.column_config.ImageColumn("Ảnh", width="small"),
             "price": st.column_config.NumberColumn("Giá", format="$%.2f"),
+            "variants": st.column_config.TextColumn("Biến thể", width="large"),
             "delivery_options": st.column_config.TextColumn(
                 "Thông tin giao hàng trên Amazon", width="large"
             ),
@@ -1140,6 +1146,15 @@ with st.sidebar:
     )
     only_deliverable = False
     only_usd = False
+    include_variants = st.toggle(
+        "Lấy biến thể Size/Flavor từ trang chi tiết",
+        value=True,
+        help=(
+            "Chỉ giữ Flavor Name và Size khớp với tiêu đề. Tùy chọn này "
+            "chậm hơn và tạo thêm yêu cầu tới Amazon."
+        ),
+        key="include_variants",
+    )
     st.info(
         "Tool sẽ giữ mọi sản phẩm đọc được. Giá, tiền tệ, Prime, Fresh và "
         "vận chuyển được lọc sau khi cào; file dữ liệu gốc không bị mất dòng.",
@@ -1285,6 +1300,7 @@ with st.sidebar:
                 max_products=int(max_products),
                 only_deliverable=only_deliverable,
                 only_usd=only_usd,
+                include_variants=include_variants,
                 overwrite_existing=file_mode == "Ghi đè",
                 requested_by_id=(access_identity or {}).get("id", ""),
                 requested_by=(access_identity or {}).get("name", ""),

@@ -25,6 +25,7 @@ from urllib3.util.retry import Retry
 AMAZON_BASE_URL = "https://www.amazon.com"
 DEFAULT_TIMEOUT_SECONDS = 30
 DEFAULT_DELAY_SECONDS = 1.25
+DETAIL_DELAY_SECONDS = 0.35
 ASIN_PATTERN = re.compile(r"^[A-Z0-9]{10}$", flags=re.IGNORECASE)
 
 LogCallback = Callable[[str], None]
@@ -42,6 +43,7 @@ class Product:
     title: str
     image_url: str
     price: float | None
+    variants: str
     delivery_detail: str
     keyword: str
     asin: str
@@ -66,12 +68,20 @@ CSV_COLUMNS = [
     "title",
     "image_url",
     "price",
+    "variants",
     "delivery_options",
     *(
         field_name
         for field_name in PRODUCT_COLUMNS
         if field_name
-        not in {"title", "image_url", "price", "delivery_options", "delivery_detail"}
+        not in {
+            "title",
+            "image_url",
+            "price",
+            "variants",
+            "delivery_options",
+            "delivery_detail",
+        }
     ),
 ]
 EXCLUDED_AMAZON_BRAND_PREFIXES = (
@@ -996,9 +1006,9 @@ def _delivery_text_from_detail_html(page_html: str) -> str:
 VARIANT_LABELS = {
     "size_name": "Size",
     "size": "Size",
-    "flavor_name": "Flavor",
-    "flavour_name": "Flavor",
-    "flavor": "Flavor",
+    "flavor_name": "Flavor Name",
+    "flavour_name": "Flavor Name",
+    "flavor": "Flavor Name",
     "color_name": "Color",
     "colour_name": "Color",
     "color": "Color",
@@ -1012,7 +1022,7 @@ VARIANT_LABELS = {
     "configuration": "Configuration",
 }
 MAX_VALUES_PER_VARIANT = 12
-TITLE_VARIANT_LABELS = {"size", "flavor"}
+TITLE_VARIANT_LABELS = {"size", "flavor", "flavor name"}
 
 
 def _variant_label(key: str, visible_label: str = "") -> str:
@@ -1075,11 +1085,32 @@ def _json_values_after_key(page_html: str, key: str) -> list[object]:
 
 
 def _variant_value_matches_title(value: str, product_title: str) -> bool:
-    searchable_value = _normalized_brand_text(value)
-    searchable_title = _normalized_brand_text(product_title)
+    def normalize_units(text: str) -> str:
+        normalized = _normalized_brand_text(text)
+        normalized = re.sub(r"\b(?:fluid\s+ounces?|fl\s+oz)\b", "fl oz", normalized)
+        normalized = re.sub(r"\b(?:ounces?|oz)\b", "oz", normalized)
+        normalized = re.sub(r"\b(?:pounds?|lbs?)\b", "lb", normalized)
+        return " ".join(normalized.split())
+
+    searchable_value = normalize_units(value)
+    searchable_title = normalize_units(product_title)
     if not searchable_value or not searchable_title:
         return False
-    return f" {searchable_value} " in f" {searchable_title} "
+    if f" {searchable_value} " in f" {searchable_title} ":
+        return True
+
+    # Amazon commonly calls a single item "(Pack of 1)" while omitting that
+    # suffix from the search title. It is safe to ignore only Pack of 1.
+    without_single_pack = re.sub(
+        r"\s+pack\s+of\s+1$",
+        "",
+        searchable_value,
+    ).strip()
+    return bool(
+        without_single_pack
+        and without_single_pack != searchable_value
+        and f" {without_single_pack} " in f" {searchable_title} "
+    )
 
 
 def _extract_variants_from_detail_html(
@@ -1161,7 +1192,14 @@ def _extract_variants_from_detail_html(
                     _add_variant_value(groups.setdefault(label, []), value)
 
     pieces: list[str] = []
-    for label, values in groups.items():
+    ordered_groups = sorted(
+        groups.items(),
+        key=lambda item: (
+            0 if item[0].casefold() in {"flavor", "flavor name"} else 1,
+            item[0].casefold(),
+        ),
+    )
+    for label, values in ordered_groups:
         if label.casefold() not in TITLE_VARIANT_LABELS:
             continue
         matching_values = [
@@ -1170,7 +1208,12 @@ def _extract_variants_from_detail_html(
             if _variant_value_matches_title(value, product_title)
         ]
         if matching_values:
-            pieces.append(f"{label}: {', '.join(matching_values)}")
+            display_label = (
+                "Flavor Name"
+                if label.casefold() in {"flavor", "flavor name"}
+                else "Size"
+            )
+            pieces.append(f"{display_label}: {', '.join(matching_values)}")
     return " | ".join(pieces)
 
 
@@ -1422,6 +1465,7 @@ def _extract_product(card: Tag, keyword: str) -> Product | None:
         asin=asin,
         title=title,
         price=price,
+        variants="",
         currency=currency,
         rating=rating,
         review_count=review_count,
@@ -1453,6 +1497,44 @@ def _extract_product(card: Tag, keyword: str) -> Product | None:
     else:
         _apply_delivery_text(product, delivery_text)
     return product
+
+
+def _load_product_variants(
+    session: requests.Session,
+    product: Product,
+    referer: str,
+    log_callback: LogCallback | None = None,
+) -> bool:
+    """Load selected Size/Flavor from a detail page; return False if blocked."""
+    try:
+        response = session.get(
+            product.product_url,
+            headers={"Referer": referer},
+            timeout=DEFAULT_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+    except requests.RequestException as error:
+        _log(
+            log_callback,
+            f"CẢNH BÁO: Không đọc được biến thể ASIN {product.asin}: {error}",
+        )
+        return not bool(
+            re.search(r"\b(?:429|503)\b|too many .* responses", str(error))
+        )
+
+    if _looks_blocked(response.text):
+        _log(
+            log_callback,
+            "CẢNH BÁO: Amazon chặn trang chi tiết; dừng lấy biến thể cho "
+            "các sản phẩm còn lại trong ngách.",
+        )
+        return False
+
+    product.variants = _extract_variants_from_detail_html(
+        response.text,
+        product.title,
+    )
+    return True
 
 
 def _looks_blocked(page_text: str) -> bool:
@@ -1512,6 +1594,7 @@ def scrape_keyword(
     max_products: int,
     only_deliverable: bool,
     only_usd: bool = False,
+    include_variants: bool = False,
     log_callback: LogCallback | None = None,
 ) -> list[Product]:
     """Scrape one Amazon keyword without dropping parsed products.
@@ -1537,12 +1620,19 @@ def scrape_keyword(
             "Chế độ cào rộng: giữ mọi sản phẩm đọc được; bộ lọc chỉ áp dụng "
             "khi xem hoặc tải kết quả.",
         )
-        _log(
-            log_callback,
-            "Chỉ đọc thẻ sản phẩm trên trang kết quả; không mở trang chi tiết "
-            "và không lấy biến thể.",
-        )
+        if include_variants:
+            _log(
+                log_callback,
+                "Có lấy biến thể: mở trang chi tiết và chỉ giữ Flavor Name/Size "
+                "khớp với tiêu đề.",
+            )
+        else:
+            _log(
+                log_callback,
+                "Chỉ đọc thẻ sản phẩm trên trang kết quả; không mở trang chi tiết.",
+            )
         _set_delivery_zip(session, zip_code, log_callback)
+        variant_requests_enabled = include_variants
 
         for page_number in range(1, max_pages + 1):
             if len(products) >= max_products:
@@ -1599,6 +1689,15 @@ def scrape_keyword(
                     rejected["trùng ASIN"] += 1
                     continue
                 seen_asins.add(product.asin)
+                if variant_requests_enabled:
+                    variant_requests_enabled = _load_product_variants(
+                        session,
+                        product,
+                        search_url,
+                        log_callback,
+                    )
+                    if variant_requests_enabled:
+                        time.sleep(DETAIL_DELAY_SECONDS)
                 if product.delivery_detail:
                     shipping_found_on_page += 1
                 else:
@@ -1659,6 +1758,7 @@ def scrape_keywords(
     log_callback: LogCallback | None = None,
     *,
     only_usd: bool = False,
+    include_variants: bool = False,
     overwrite_existing: bool = True,
     result_callback: ResultCallback | None = None,
     stop_requested_callback: StopCallback | None = None,
@@ -1695,6 +1795,7 @@ def scrape_keywords(
                 max_products=max_products,
                 only_deliverable=only_deliverable,
                 only_usd=only_usd,
+                include_variants=include_variants,
                 log_callback=log_callback,
             )
             niche_path = output_dir / f"{slugify_filename(keyword)}.csv"

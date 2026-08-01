@@ -15,14 +15,12 @@ Web app Streamlit tiếng Việt để chạy tuần tự nhiều ngách Amazon,
 - Lưu CSV riêng từng ngách và cập nhật file gộp theo ngách đầu tiên, ví dụ `snack_all_products.csv`, ngay lập tức.
 - Chuẩn hóa link sản phẩm thành `https://www.amazon.com/dp/ASIN` và bỏ tham số tracking.
 - Lấy link ảnh gốc, tự bỏ mã resize Amazon như `._AC_UL320_`.
-- Chỉ đọc dữ liệu ngay trên các thẻ của trang kết quả Amazon, không mở trang
-  chi tiết sản phẩm và không lấy biến thể; nhờ vậy số request thấp hơn.
+- Có tùy chọn mở trang chi tiết để lấy đúng `Flavor Name` và `Size`; chỉ giữ giá
+  trị khớp với tiêu đề sản phẩm. Có thể tắt tùy chọn này để giảm số request.
 - Giữ cả sản phẩm thiếu giá hoặc thiếu thông tin ship; trường chưa đọc được được
   ghi rõ để có thể lọc lại trên giao diện.
-- Bảng và CSV chỉ hiển thị cột thời gian giao, ví dụ `Today 2 PM - 6 PM`,
-  `Tomorrow, Aug 1`, `Overnight 4 AM - 6 AM` hoặc
-  `Prime: Sun, Aug 2 | Non-member: Thu, Aug 6`; khoảng ngày như
-  `Free delivery: Aug 9 - 13 | Fastest delivery: Aug 9 - 10` cũng được giữ đầy đủ.
+- Bảng và CSV giữ nguyên câu giao hàng Amazon hiển thị, ví dụ
+  `Join Prime to get FREE delivery Overnight 4 AM - 8 AM on eligible orders | Or Non-members get FREE delivery Wed, Aug 5`.
   Cột thông tin ship dài được giữ nội bộ để lọc
   Prime/Fresh/free shipping nhưng không xuất ra bảng hoặc CSV.
 - Bộ lọc kết quả gồm tên sản phẩm, ngách, tiền tệ, khoảng giá, đánh giá, Prime,
@@ -196,15 +194,12 @@ Nếu Amazon trả `Robot Check`, `Sorry! Something went wrong!`, HTTP 429/503 h
 trang trung gian không có ASIN, app sẽ báo lỗi chẩn đoán và dừng các ngách còn lại
 thay vì ghi hàng loạt CSV rỗng.
 
-Khi Amazon trả đúng thẻ kết quả, cột `delivery_options` chỉ chứa các mốc giao
-hàng, giữ tất cả mốc đọc được theo đúng thứ tự:
+Khi Amazon trả đúng thẻ kết quả, cột `delivery_options` giữ các câu giao hàng
+đầy đủ theo đúng thứ tự:
 
-- `Prime: Today 2 PM - 6 PM`
-- `Prime: Tomorrow, August 1`
-- `Prime: Overnight 7 AM - 11 AM`
-- `Prime: Sun, Aug 2`
-- `Prime: Tomorrow, Aug 1 | Non-member: Wed, Aug 5`
-- `Free delivery: Aug 9 - 13 | Fastest delivery: Aug 9 - 10`
+- `Join Prime to get FREE delivery Today 2 PM - 6 PM on eligible orders`
+- `Join Prime to get FREE delivery Tomorrow, Aug 1 | Or Non-members get FREE delivery Wed, Aug 5`
+- `FREE delivery Aug 9 - 13 on $35 of items shipped by Amazon | Or fastest delivery Aug 9 - 10`
 
 Ô `Tìm thời gian giao` cho phép lọc trực tiếp theo bất kỳ ngày, giờ hoặc khoảng
 ngày nào đang hiển thị, ngoài các nút lọc nhanh Today/Tomorrow/Overnight.
