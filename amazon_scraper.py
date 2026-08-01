@@ -1031,8 +1031,25 @@ def _extract_fresh_shipping_text(
     return " | ".join(pieces)
 
 
+def _non_member_shipping_text(delivery_text: str) -> str:
+    """Normalize Amazon's separate free-delivery promise for non-members."""
+    match = re.search(
+        r"\b(?:or\s+)?non[\s-]*members?\s+(?:can\s+)?(?:get\s+)?"
+        r"free\s+(?:delivery|shipping)\b.{0,120}",
+        delivery_text,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return ""
+
+    timing = _extract_delivery_detail(match.group(0))
+    if not timing:
+        return ""
+    return f"Non-member | FREE delivery | {timing}"
+
+
 def _shipping_detail_text(delivery_text: str) -> str:
-    """Return one normalized shipping promise, never variants or SNAP text."""
+    """Return distinct Prime/non-member promises, never variants or SNAP text."""
     cleaned = _clean_text(delivery_text)
     if not cleaned:
         return ""
@@ -1089,7 +1106,13 @@ def _shipping_detail_text(delivery_text: str) -> str:
 
     if not candidates:
         return ""
-    return max(candidates, key=lambda item: (item[0], len(item[1])))[1]
+    best_offer = max(candidates, key=lambda item: (item[0], len(item[1])))[1]
+    non_member_offer = _non_member_shipping_text(cleaned)
+    if best_offer.startswith("Prime member |") and non_member_offer:
+        return f"{best_offer} | {non_member_offer}"
+    if best_offer.startswith("FREE delivery |") and non_member_offer:
+        return non_member_offer
+    return best_offer
 
 
 def _qualified_fast_free_shipping_text(delivery_text: str) -> str:

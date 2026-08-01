@@ -203,6 +203,7 @@ Khi Amazon trả đúng thẻ kết quả, cột `delivery_detail` được phâ
 - `Prime member | FREE delivery | Tomorrow, August 1`
 - `Prime member | FREE delivery | Overnight 7 AM - 11 AM`
 - `Prime member | FREE delivery | Sun, Aug 2`
+- `Prime member | FREE delivery | Tomorrow, Aug 1 | Non-member | FREE delivery | Wed, Aug 5`
 - `Fresh | FREE delivery | Overnight 4 AM - 6 AM | Orders over $100 with Prime`
 - `Fresh | Ships from: AmazonFresh | Sold by: AmazonFresh`
 

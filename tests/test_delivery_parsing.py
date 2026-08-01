@@ -253,7 +253,8 @@ class DeliveryParsingTests(unittest.TestCase):
         self.assertIsNotNone(prime_product)
         self.assertEqual(
             prime_product.delivery_detail,
-            "Prime member | FREE delivery | Sun, Aug 2",
+            "Prime member | FREE delivery | Sun, Aug 2 | "
+            "Non-member | FREE delivery | Thu, Aug 6",
         )
         self.assertTrue(prime_product.free_shipping)
         self.assertTrue(prime_product.prime)
@@ -288,7 +289,7 @@ class DeliveryParsingTests(unittest.TestCase):
             with self.subTest(raw_text=raw_text):
                 self.assertEqual(_shipping_detail_text(raw_text), expected)
 
-    def test_shipping_detail_does_not_mix_prime_and_non_member_times(self) -> None:
+    def test_shipping_detail_separates_prime_and_non_member_times(self) -> None:
         raw_text = (
             "Join Prime to get FREE delivery Today 10 AM - 3 PM "
             "on eligible orders. Or Non-members get FREE delivery "
@@ -297,7 +298,8 @@ class DeliveryParsingTests(unittest.TestCase):
 
         self.assertEqual(
             _shipping_detail_text(raw_text),
-            "Prime member | FREE delivery | Today 10 AM - 3 PM",
+            "Prime member | FREE delivery | Today 10 AM - 3 PM | "
+            "Non-member | FREE delivery | Tomorrow, August 5",
         )
 
     def test_shipping_detail_matches_join_prime_tomorrow_card(self) -> None:
@@ -308,7 +310,22 @@ class DeliveryParsingTests(unittest.TestCase):
 
         self.assertEqual(
             _shipping_detail_text(raw_text),
-            "Prime member | FREE delivery | Tomorrow, Aug 1",
+            "Prime member | FREE delivery | Tomorrow, Aug 1 | "
+            "Non-member | FREE delivery | Wed, Aug 5",
+        )
+
+    def test_shipping_detail_keeps_both_prime_and_non_member_promises(
+        self,
+    ) -> None:
+        raw_text = (
+            "Join Prime to get FREE delivery Tomorrow, Aug 1 "
+            "Or Non-members get FREE delivery Wed, Aug 5"
+        )
+
+        self.assertEqual(
+            _shipping_detail_text(raw_text),
+            "Prime member | FREE delivery | Tomorrow, Aug 1 | "
+            "Non-member | FREE delivery | Wed, Aug 5",
         )
 
     def test_qualified_shipping_requires_free_and_fast_terms_together(
