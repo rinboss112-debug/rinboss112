@@ -178,8 +178,11 @@ class DeliveryParsingTests(unittest.TestCase):
         self.assertIsNotNone(product)
         self.assertEqual(
             product.delivery_detail,
-            "Fresh | Ships from: AmazonFresh | Sold by: AmazonFresh",
+            "Fresh | FREE delivery | Orders over $100 with Prime | "
+            "Ships from: AmazonFresh | Sold by: AmazonFresh",
         )
+        self.assertTrue(product.free_shipping)
+        self.assertFalse(product.prime)
         self.assertTrue(product.delivery_available)
 
     def test_fresh_shipping_takes_precedence_over_prime_wording(self) -> None:
@@ -200,11 +203,62 @@ class DeliveryParsingTests(unittest.TestCase):
         self.assertIsNotNone(product)
         self.assertEqual(
             product.delivery_detail,
-            "Fresh | Ships from: AmazonFresh | Sold by: AmazonFresh",
+            "Fresh | FREE delivery | Orders over $100 with Prime | "
+            "Ships from: AmazonFresh | Sold by: AmazonFresh",
         )
         self.assertFalse(product.prime)
         self.assertFalse(product.fast_shipping)
         self.assertEqual(product.delivery_options, "")
+
+    def test_fresh_and_join_prime_cards_are_distinguished(self) -> None:
+        fresh_html = """
+        <div data-asin="B000000010">
+          <h2><a href="/dp/B000000010"><span>Fresh Pudding</span></a></h2>
+          <div data-cy="delivery-recipe">
+            fresh
+            FREE delivery Overnight 4 AM - 6 AM on orders over $100 with Prime
+            Ships from AmazonFresh
+            Sold by AmazonFresh
+          </div>
+        </div>
+        """
+        prime_html = """
+        <div data-asin="B000000011">
+          <h2><a href="/dp/B000000011"><span>Vanilla Pudding</span></a></h2>
+          <div data-cy="delivery-recipe">
+            Join Prime to get FREE delivery Sun, Aug 2
+            Or Non-members get FREE delivery Thu, Aug 6 on $35 of items
+            shipped by Amazon
+          </div>
+        </div>
+        """
+
+        fresh_card = BeautifulSoup(fresh_html, "lxml").select_one("[data-asin]")
+        prime_card = BeautifulSoup(prime_html, "lxml").select_one("[data-asin]")
+        fresh_product = _extract_product(fresh_card, "pudding")
+        prime_product = _extract_product(prime_card, "pudding")
+
+        self.assertIsNotNone(fresh_product)
+        self.assertEqual(
+            fresh_product.delivery_detail,
+            "Fresh | FREE delivery | Overnight 4 AM - 6 AM | "
+            "Orders over $100 with Prime | Ships from: AmazonFresh | "
+            "Sold by: AmazonFresh",
+        )
+        self.assertTrue(fresh_product.free_shipping)
+        self.assertFalse(fresh_product.prime)
+        self.assertFalse(fresh_product.fast_shipping)
+        self.assertEqual(fresh_product.delivery_options, "")
+
+        self.assertIsNotNone(prime_product)
+        self.assertEqual(
+            prime_product.delivery_detail,
+            "Prime member | FREE delivery | Sun, Aug 2",
+        )
+        self.assertTrue(prime_product.free_shipping)
+        self.assertTrue(prime_product.prime)
+        self.assertFalse(prime_product.fast_shipping)
+        self.assertEqual(prime_product.delivery_options, "")
 
     def test_shipping_detail_never_uses_variant_or_snap_text(self) -> None:
         incorrect_texts = (

@@ -22,7 +22,8 @@ Web app Streamlit tiếng Việt để chạy tuần tự nhiều ngách Amazon,
 - Cột `delivery_detail` được chuẩn hóa thành dạng dễ lọc như
   `Prime member | FREE delivery | Tomorrow, July 31` hoặc
   `Prime member | FREE delivery | Overnight 7 AM - 11 AM`; Fresh được ghi cùng
-  cột dưới dạng `Fresh | Ships from: AmazonFresh | Sold by: AmazonFresh`.
+  cột nhưng tách loại rõ ràng, ví dụ
+  `Fresh | FREE delivery | Overnight 4 AM - 6 AM | Orders over $100 with Prime`.
   Nội dung biến thể, Subscribe & Save và `SNAP EBT eligible` không được đưa vào
   cột giao hàng.
 - Bộ lọc kết quả gồm tên sản phẩm, ngách, tiền tệ, khoảng giá, đánh giá, Prime,
@@ -201,6 +202,8 @@ Khi Amazon trả đúng thẻ kết quả, cột `delivery_detail` được phâ
 - `Prime member | FREE delivery | Today 2 PM - 6 PM`
 - `Prime member | FREE delivery | Tomorrow, August 1`
 - `Prime member | FREE delivery | Overnight 7 AM - 11 AM`
+- `Prime member | FREE delivery | Sun, Aug 2`
+- `Fresh | FREE delivery | Overnight 4 AM - 6 AM | Orders over $100 with Prime`
 - `Fresh | Ships from: AmazonFresh | Sold by: AmazonFresh`
 
 Để lấy ngày giao ổn định hơn, nên chạy scraper từ kết nối tại Mỹ hoặc một worker

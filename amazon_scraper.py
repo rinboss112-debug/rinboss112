@@ -406,7 +406,10 @@ def _qualified_delivery_fallback(page_text: str) -> str:
     timing = (
         rf"(?:overnight{time_window}"
         rf"|today(?:,\s*(?:[A-Za-z]+\s+)?\d{{1,2}})?{time_window}"
-        rf"|tomorrow(?:,\s*(?:[A-Za-z]+\s+)?\d{{1,2}})?{time_window})"
+        rf"|tomorrow(?:,\s*(?:[A-Za-z]+\s+)?\d{{1,2}})?{time_window}"
+        rf"|(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|"
+        rf"Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?),?\s+"
+        rf"(?:[A-Za-z]{{3,9}}\s+)?\d{{1,2}}{time_window})"
     )
     patterns = (
         rf"\bjoin\s+prime\s+to\s+get\s+"
@@ -655,6 +658,23 @@ def _extract_delivery_detail(delivery_text: str) -> str:
     )
     if overnight:
         return _clean_text(overnight.group(0)).replace("–", "-").replace("—", "-")
+
+    weekday = re.search(
+        r"\b(?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|"
+        r"Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?),?\s+"
+        r"(?:[A-Za-z]{3,9}\s+)?\d{1,2}\b"
+        r"(?:\s+(?:by\s+)?\d{1,2}(?::\d{2})?\s*(?:AM|PM)"
+        r"(?:\s*(?:-|–|—|to)\s*\d{1,2}(?::\d{2})?\s*(?:AM|PM))?)?",
+        delivery_text,
+        flags=re.IGNORECASE,
+    )
+    if weekday:
+        clean = (
+            _clean_text(weekday.group(0))
+            .replace("–", "-")
+            .replace("—", "-")
+        )
+        return clean[0].upper() + clean[1:]
 
     matches = re.findall(
         r"\b(?:today|tomorrow)\b"
@@ -967,6 +987,35 @@ def _extract_fresh_shipping_text(
         return ""
     pieces = ["Fresh"]
 
+    # A result card can contain both a Fresh promise and a separate Join Prime
+    # promise. Only read timing/threshold text that belongs to the Fresh block.
+    fresh_offer_text = re.split(
+        r"\b(?:join\s+prime|or\s+prime\s+members?)\b",
+        delivery_text,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+
+    if re.search(
+        r"\bfree\b.{0,20}\b(?:delivery|shipping)\b",
+        fresh_offer_text,
+        flags=re.IGNORECASE,
+    ):
+        pieces.append("FREE delivery")
+
+    timing = _extract_delivery_detail(fresh_offer_text)
+    if timing:
+        pieces.append(timing)
+
+    threshold = re.search(
+        r"\borders?\s+over\s+(\$\s*\d+(?:[.,]\d{1,2})?)\s+with\s+prime\b",
+        fresh_offer_text,
+        flags=re.IGNORECASE,
+    )
+    if threshold:
+        amount = re.sub(r"\s+", "", threshold.group(1))
+        pieces.append(f"Orders over {amount} with Prime")
+
     page_text = _clean_text(
         BeautifulSoup(page_html or "", "lxml").get_text(" ", strip=True)
     )
@@ -1000,8 +1049,6 @@ def _shipping_detail_text(delivery_text: str) -> str:
 
     candidates: list[tuple[int, str]] = []
     for segment in candidate_segments:
-        if not _extract_delivery_options(segment):
-            continue
         if not re.search(
             r"\b(?:delivery|shipping|arrives?)\b",
             segment,
