@@ -246,6 +246,17 @@ class DeliveryParsingTests(unittest.TestCase):
             "Prime member | FREE delivery | Today 10 AM - 3 PM",
         )
 
+    def test_shipping_detail_matches_join_prime_tomorrow_card(self) -> None:
+        raw_text = (
+            "Join Prime to get FREE delivery Tomorrow, Aug 1 "
+            "Or Non-members get FREE delivery Wed, Aug 5 on items shipped by Amazon"
+        )
+
+        self.assertEqual(
+            _shipping_detail_text(raw_text),
+            "Prime member | FREE delivery | Tomorrow, Aug 1",
+        )
+
     def test_qualified_shipping_requires_free_and_fast_terms_together(
         self,
     ) -> None:
