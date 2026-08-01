@@ -210,6 +210,9 @@ hàng, giữ tất cả mốc đọc được theo đúng thứ tự:
 ngày nào đang hiển thị, ngoài các nút lọc nhanh Today/Tomorrow/Overnight.
 Nếu câu giao hàng đang hiển thị và thuộc tính HTML ẩn của Amazon khác nhau, app
 ưu tiên câu đang hiển thị trên thẻ sản phẩm để tránh lấy nhầm thời gian cũ.
+Nếu cùng một ASIN xuất hiện nhiều lần trên trang kết quả, app ưu tiên thẻ có
+lời hứa giao nhanh rõ ràng hơn (`Overnight`, rồi `Today`, `Tomorrow`) thay vì
+giữ thẻ ngày thường xuất hiện trước.
 
 Để lấy ngày giao ổn định hơn, nên chạy scraper từ kết nối tại Mỹ hoặc một worker
 cục bộ có phiên trình duyệt và ZIP phù hợp, sau đó đồng bộ CSV lên Google Drive.

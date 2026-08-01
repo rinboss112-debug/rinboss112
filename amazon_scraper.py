@@ -505,6 +505,34 @@ def _asin_from_card(card: Tag) -> str:
     return ""
 
 
+def _card_delivery_rank(card: Tag) -> tuple[int, int, int, int]:
+    """Prefer the most useful visible delivery promise for duplicate ASINs."""
+    text = _clean_text(card.get_text(" ", strip=True))
+    lowered = text.casefold()
+    timing_rank = 0
+    if re.search(r"\bovernight\b", lowered):
+        timing_rank = 5
+    elif re.search(r"\btoday\b", lowered):
+        timing_rank = 4
+    elif re.search(r"\btomorrow\b", lowered):
+        timing_rank = 3
+    elif re.search(r"\bfastest\s+delivery\b", lowered):
+        timing_rank = 2
+    elif re.search(
+        r"\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)(?:day|sday|nesday|rsday|urday)?\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        timing_rank = 1
+
+    return (
+        timing_rank,
+        int(bool(re.search(r"\bfree\s+(?:delivery|shipping)\b", lowered))),
+        int("sponsored" not in lowered),
+        len(text),
+    )
+
+
 def _find_search_cards(soup: BeautifulSoup) -> list[Tag]:
     """Find product cards across known Amazon search-result layouts."""
     selectors = (
@@ -533,7 +561,7 @@ def _find_search_cards(soup: BeautifulSoup) -> list[Tag]:
                 candidates.append(card)
 
     cards: list[Tag] = []
-    seen_asins: set[str] = set()
+    asin_positions: dict[str, int] = {}
     for card in candidates:
         asin = _asin_from_card(card)
         title = (
@@ -542,9 +570,15 @@ def _find_search_cards(soup: BeautifulSoup) -> list[Tag]:
             or _select_text(card, "h2")
             or _select_text(card, "[data-cy='title-recipe']")
         )
-        if asin and title and asin not in seen_asins:
-            seen_asins.add(asin)
+        if not asin or not title:
+            continue
+        existing_position = asin_positions.get(asin)
+        if existing_position is None:
+            asin_positions[asin] = len(cards)
             cards.append(card)
+            continue
+        if _card_delivery_rank(card) > _card_delivery_rank(cards[existing_position]):
+            cards[existing_position] = card
     return cards
 
 

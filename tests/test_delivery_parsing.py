@@ -136,6 +136,36 @@ class DeliveryParsingTests(unittest.TestCase):
         )
         self.assertNotIn("Tomorrow", product.delivery_options)
 
+    def test_duplicate_asin_prefers_visible_overnight_card(self) -> None:
+        html = """
+        <html><body>
+          <div data-component-type="s-search-result" data-asin="B01BXU1RV6">
+            <h2><a href="/dp/B01BXU1RV6"><span>Nabisco Snacks</span></a></h2>
+            <div>Join Prime to get FREE delivery <b>Sun, Aug 2</b></div>
+            <div>Or Non-members get FREE delivery <b>Wed, Aug 5</b></div>
+          </div>
+          <div data-component-type="s-search-result" data-asin="B01BXU1RV6">
+            <h2><a href="/dp/B01BXU1RV6"><span>Nabisco Snacks</span></a></h2>
+            <div>
+              Join Prime to get FREE delivery
+              <b>Overnight 4 AM - 8 AM</b> on eligible orders
+            </div>
+            <div>Or Non-members get FREE delivery <b>Wed, Aug 5</b></div>
+          </div>
+        </body></html>
+        """
+        cards = _find_search_cards(BeautifulSoup(html, "lxml"))
+
+        self.assertEqual(len(cards), 1)
+        product = _extract_product(cards[0], "snacks")
+        self.assertIsNotNone(product)
+        self.assertEqual(product.asin, "B01BXU1RV6")
+        self.assertEqual(
+            product.delivery_options,
+            "Prime: Overnight 4 AM - 8 AM | Non-member: Wed, Aug 5",
+        )
+        self.assertNotIn("Sun, Aug 2", product.delivery_options)
+
     def test_search_cards_keep_all_bold_delivery_dates_and_ranges(self) -> None:
         prime_html = """
         <div data-asin="B000000020">
