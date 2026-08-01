@@ -868,8 +868,11 @@ def _filter_results(
 
 
 def _render_table(frame: pd.DataFrame) -> None:
+    display_frame = frame.copy()
+    display_frame["image_preview"] = display_frame["image_url"]
     display_columns = [
         "title",
+        "image_preview",
         "image_url",
         "price",
         "variants",
@@ -888,16 +891,21 @@ def _render_table(frame: pd.DataFrame) -> None:
         "scraped_at",
     ]
     st.dataframe(
-        frame,
+        display_frame,
         hide_index=True,
         height=520,
-        row_height=72,
+        row_height=56,
         column_order=display_columns,
         column_config={
             "title": st.column_config.TextColumn(
                 "Sản phẩm", width="large", pinned=True
             ),
-            "image_url": st.column_config.ImageColumn("Ảnh", width="small"),
+            "image_preview": st.column_config.ImageColumn(
+                "Ảnh", width="small"
+            ),
+            "image_url": st.column_config.TextColumn(
+                "Link ảnh", width="medium"
+            ),
             "price": st.column_config.NumberColumn("Giá", format="$%.2f"),
             "variants": st.column_config.TextColumn("Biến thể", width="large"),
             "delivery_options": st.column_config.TextColumn(
