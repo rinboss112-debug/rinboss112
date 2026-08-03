@@ -86,6 +86,12 @@ temu_hot_products_page = st.Page(
     icon=":material/local_fire_department:",
     url_path="temu-hot-products",
 )
+temu_orders_page = st.Page(
+    "app_pages/temu_orders.py",
+    title="Đơn Temu US",
+    icon=":material/receipt_long:",
+    url_path="temu-orders",
+)
 admin_page = st.Page(
     "app_pages/admin.py",
     title="Quản trị",
@@ -111,7 +117,13 @@ published_pages = [
     page for page in content.get("pages", []) if bool(page.get("published", False))
 ]
 navigation_pages: dict[str, list[Any]] = {
-    "": [scraper_page, tiktok_export_page, amazon_images_page, temu_hot_products_page]
+    "": [
+        scraper_page,
+        tiktok_export_page,
+        amazon_images_page,
+        temu_hot_products_page,
+        temu_orders_page,
+    ]
 }
 for category in content.get("categories", []):
     category_id = str(category.get("id", ""))

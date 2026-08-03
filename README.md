@@ -51,6 +51,14 @@ Web app Streamlit tiếng Việt để chạy tuần tự nhiều ngách Amazon,
 - Tự tính giá bán theo công thức (giá gốc × 2 + 12) ÷ 0.8, đồng thời cho phép sửa giá cuối cùng.
 - Có bảng kiểm tra SKU, tên, mô tả, brand, ảnh, tồn kho, cân nặng, kích thước và GTIN/UPC trước khi xuất.
 - Hỗ trợ tải template XLSX chính thức của từng category TikTok, tự gợi ý ánh xạ cột và điền dữ liệu mà không thêm hoặc xóa cột của template.
+- Trang `/temu-orders` dành cho admin, kết nối Temu US Open API bằng `app_key`,
+  `app_secret` và `access_token`; token không xuất hiện trong giao diện, log hay GitHub.
+- Tải đơn theo ngày/trạng thái, phân biệt chờ gửi, đã giao đơn vị vận chuyển, đã nhận,
+  sắp trễ và quá hạn dựa trên dữ liệu chính thức `parentOrderStatus`,
+  `expectShipLatestTime` và `parentOrderLabel` của Temu.
+- Ghi chú nội bộ theo từng mã PO, đồng bộ `temu_order_notes.json` lên Google Drive;
+  lọc bảng và tải CSV danh sách đơn đang xem.
+- Lấy kiện đã tạo và mở/in shipping label PDF bằng API vận chuyển tích hợp của Temu.
 
 ## Cài đặt local
 
@@ -155,6 +163,35 @@ Khi Google Drive đã cấu hình, chính sách nằm trong `access_control.json
 
 Nếu `enable_access_control = false` hoặc không khai báo, app tiếp tục dùng mật khẩu `[app]` cũ để tương thích.
 
+## Kết nối đơn hàng Temu US
+
+Temu Open API không chỉ dùng một token. Mỗi request cần đủ `app_key`, `app_secret`,
+`access_token` và chữ ký MD5. Không dùng email hoặc mật khẩu Seller Center trong tool.
+
+1. Đăng ký hoặc đăng nhập [Temu Partner Platform](https://partner.temu.com/).
+2. Tạo app, hoàn tất yêu cầu xét duyệt/bảo mật và xin quyền **Order Management**.
+3. Muốn lấy/in label, xin thêm quyền **Local Order Fulfillment Management** hoặc gói
+   fulfillment tương ứng với loại shop.
+4. Cho shop Temu US ủy quyền app và lấy `access_token` của đúng shop đó.
+5. Vào Streamlit Cloud → **Manage app → Settings → Secrets**, thêm:
+
+```toml
+[temu]
+app_key = "YOUR_TEMU_APP_KEY"
+app_secret = "YOUR_TEMU_APP_SECRET"
+access_token = "YOUR_TEMU_ACCESS_TOKEN"
+endpoint = "https://openapi-b-us.temu.com/openapi/router"
+display_timezone = "America/Los_Angeles"
+```
+
+6. Save, reboot app rồi mở `https://TEN-APP.streamlit.app/temu-orders` và đăng nhập admin.
+
+Trang đơn không tự gọi API khi bạn thay đổi bộ lọc bảng. Chỉ nút **Kiểm tra đơn Temu**
+mới tải lại dữ liệu để tránh lãng phí quota. Trạng thái sắp trễ/quá hạn ưu tiên nhãn
+`soon_to_be_overdue` và `past_due` của Temu, sau đó mới so sánh thời gian hạn gửi.
+Nhãn PDF chỉ có sau khi đơn đã tạo kiện thành công bằng kênh vận chuyển tích hợp Temu.
+Ghi chú trong tool là ghi chú nội bộ, không sửa dữ liệu ghi chú trên Temu Seller Center.
+
 ## Xuất Excel cho TikTok Shop US
 
 Mở đường dẫn /tiktok-shop-us trên app và đăng nhập bằng mật khẩu admin.
@@ -248,6 +285,7 @@ output/
 ├── access_control.json
 ├── niche_catalog.json
 ├── custom_pages.json
+├── temu_order_notes.json
 └── runs/
     └── run_20260720_153000_a1b2c3/
         ├── halloween_outdoor_decorations.csv
