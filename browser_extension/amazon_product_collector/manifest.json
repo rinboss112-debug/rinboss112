@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "RinBoss Amazon Collector",
+  "version": "1.2.0",
+  "description": "Thu thập sản phẩm đang hiển thị trên trang tìm kiếm Amazon và xuất CSV cho RinBoss Commerce.",
+  "minimum_chrome_version": "102",
+  "action": {
+    "default_title": "RinBoss Amazon Collector",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "activeTab",
+    "alarms",
+    "scripting",
+    "storage",
+    "tabs",
+    "unlimitedStorage"
+  ],
+  "host_permissions": [
+    "https://www.amazon.com/*"
+  ]
+}

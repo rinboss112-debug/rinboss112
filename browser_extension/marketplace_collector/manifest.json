@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "RinBoss Marketplace Collector",
+  "version": "2.0.0",
+  "description": "Thu thập kết quả đang hiển thị trên Amazon hoặc Temu US và xuất CSV để đối chiếu giá.",
+  "minimum_chrome_version": "102",
+  "action": {
+    "default_title": "RinBoss Marketplace Collector",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "activeTab",
+    "alarms",
+    "scripting",
+    "storage",
+    "tabs",
+    "unlimitedStorage"
+  ],
+  "host_permissions": [
+    "https://www.amazon.com/*",
+    "https://temu.com/*",
+    "https://www.temu.com/*",
+    "https://*.temu.com/*"
+  ]
+}

@@ -192,6 +192,26 @@ mới tải lại dữ liệu để tránh lãng phí quota. Trạng thái sắp
 Nhãn PDF chỉ có sau khi đơn đã tạo kiện thành công bằng kênh vận chuyển tích hợp Temu.
 Ghi chú trong tool là ghi chú nội bộ, không sửa dữ liệu ghi chú trên Temu Seller Center.
 
+## Hai Chrome Extension độc lập
+
+- `/amazon-extension`: tải **RinBoss Amazon Collector 1.2** hiện có, chỉ dùng cho Amazon.
+- `/marketplace-extension`: tải **RinBoss Marketplace Collector 2.0**, extension riêng để
+  thu thập Temu US và Amazon thành hai kho so sánh. Có thể cài song song, không ghi đè nhau.
+
+Quy trình Marketplace Collector:
+
+1. Dùng một file TXT ngách cho cả hai nguồn.
+2. Chọn Temu US, mở Temu và chạy. Với Temu, số lượt tương đương số lần cuộn/tải thêm.
+3. Xuất CSV Temu, chuyển sang Amazon, đặt ZIP và chạy lại cùng file TXT.
+4. Xuất CSV Amazon rồi mở `/temu-amazon-gap` và upload đủ hai file.
+5. Lọc tỷ lệ 2–3x, độ khớp, giá Temu, số đã bán và lợi nhuận ước tính.
+6. Chọn các dòng đã kiểm tra rồi tải CSV riêng.
+
+Extension không đọc mật khẩu, cookie hoặc token và không giải CAPTCHA. Trang so sánh
+không khẳng định hai listing là cùng một SKU: cần mở cả hai link để xác nhận ảnh, mẫu,
+size, pack, thương hiệu, quyền bán và toàn bộ chi phí. Mã nguồn nằm trong
+`browser_extension/amazon_product_collector/` và `browser_extension/marketplace_collector/`.
+
 ## Xuất Excel cho TikTok Shop US
 
 Mở đường dẫn /tiktok-shop-us trên app và đăng nhập bằng mật khẩu admin.

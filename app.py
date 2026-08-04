@@ -80,11 +80,29 @@ amazon_images_page = st.Page(
     icon=":material/imagesmode:",
     url_path="amazon-images",
 )
+amazon_extension_page = st.Page(
+    "app_pages/amazon_extension.py",
+    title="Amazon Extension",
+    icon=":material/extension:",
+    url_path="amazon-extension",
+)
+marketplace_extension_page = st.Page(
+    "app_pages/marketplace_extension.py",
+    title="Marketplace Extension",
+    icon=":material/extension:",
+    url_path="marketplace-extension",
+)
 temu_hot_products_page = st.Page(
     "app_pages/temu_hot_products.py",
     title="Sản phẩm hot Temu",
     icon=":material/local_fire_department:",
     url_path="temu-hot-products",
+)
+marketplace_gap_page = st.Page(
+    "app_pages/marketplace_gap.py",
+    title="So sánh Temu–Amazon",
+    icon=":material/compare_arrows:",
+    url_path="temu-amazon-gap",
 )
 temu_orders_page = st.Page(
     "app_pages/temu_orders.py",
@@ -119,9 +137,12 @@ published_pages = [
 navigation_pages: dict[str, list[Any]] = {
     "": [
         scraper_page,
+        amazon_extension_page,
+        marketplace_extension_page,
         tiktok_export_page,
         amazon_images_page,
         temu_hot_products_page,
+        marketplace_gap_page,
         temu_orders_page,
     ]
 }

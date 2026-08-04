@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RinBoss Amazon Collector</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <span class="eyebrow">RINBOSS COMMERCE</span>
+        <h1>Amazon Collector</h1>
+        <p>Nhập nhiều ngách, chọn số trang và thu thập ngay trong trình duyệt của bạn.</p>
+      </header>
+
+      <section class="stats" aria-label="Thống kê">
+        <div><strong id="product-count">0</strong><span>Sản phẩm đã lưu</span></div>
+        <div><strong id="last-page-count">0</strong><span>Trang vừa lấy</span></div>
+      </section>
+
+      <section class="batch-card" aria-label="Cào hàng loạt">
+        <div class="section-title">
+          <div>
+            <span class="step">CHẠY HÀNG LOẠT</span>
+            <h2>Danh sách ngách</h2>
+          </div>
+          <label class="file-button" for="txt-file">Nhập TXT</label>
+          <input id="txt-file" type="file" accept=".txt,text/plain" hidden>
+        </div>
+
+        <textarea id="keywords" rows="6" placeholder="Mỗi dòng một ngách, ví dụ:&#10;Snack Food Gifts&#10;acne pimple patches"></textarea>
+        <p id="keyword-count" class="hint">0 ngách hợp lệ</p>
+
+        <div class="field-grid">
+          <label>
+            <span>Số trang/ngách</span>
+            <input id="pages-per-keyword" type="number" min="1" max="10" value="2">
+          </label>
+          <label>
+            <span>Nghỉ giữa trang (giây)</span>
+            <input id="delay-seconds" type="number" min="8" max="120" value="10">
+          </label>
+        </div>
+
+        <label class="check-row">
+          <input id="exclude-brands" type="checkbox" checked>
+          <span>Loại brand Amazon/Fresh/Saver/Grocery/365</span>
+        </label>
+
+        <div class="batch-actions">
+          <button id="start-batch" class="primary" type="button">Bắt đầu cào danh sách</button>
+          <button id="stop-batch" class="danger" type="button" disabled>Dừng sau trang hiện tại</button>
+        </div>
+
+        <section id="progress-wrap" class="progress-wrap" hidden>
+          <div class="progress-label">
+            <strong id="batch-label">Chờ</strong>
+            <span id="batch-percent">0%</span>
+          </div>
+          <div class="progress-track"><span id="progress-bar"></span></div>
+          <p id="batch-detail" class="hint"></p>
+        </section>
+      </section>
+
+      <details>
+        <summary>Lấy riêng trang đang mở</summary>
+        <button id="collect" class="secondary" type="button">Lấy trang Amazon hiện tại</button>
+      </details>
+
+      <section class="filter-card" aria-label="Lọc CSV">
+        <div class="section-title compact-title">
+          <div>
+            <span class="step">XUẤT DỮ LIỆU</span>
+            <h2>Lọc file CSV</h2>
+          </div>
+          <strong id="filtered-count" class="match-count">0 phù hợp</strong>
+        </div>
+        <input id="filter-query" type="search" placeholder="Tìm tiêu đề, ngách hoặc ASIN">
+        <div class="field-grid">
+          <label>
+            <span>Giá thấp nhất ($)</span>
+            <input id="filter-min-price" type="number" min="0" step="0.01" value="0">
+          </label>
+          <label>
+            <span>Giá cao nhất ($)</span>
+            <input id="filter-max-price" type="number" min="0" step="0.01" value="0">
+          </label>
+        </div>
+        <label class="select-field">
+          <span>Điều kiện giao hàng</span>
+          <select id="filter-shipping">
+            <option value="all">Tất cả sản phẩm</option>
+            <option value="prime">Có Prime</option>
+            <option value="free">Có FREE delivery/shipping</option>
+            <option value="fast">Today/Tomorrow/Overnight</option>
+            <option value="not-fresh">Không có Fresh</option>
+          </select>
+        </label>
+        <p class="hint">Bộ lọc chỉ áp dụng cho nút “CSV đã lọc”, không xóa dữ liệu gốc.</p>
+      </section>
+
+      <p id="status" class="status" role="status">Mở amazon.com trong tab này trước khi bắt đầu.</p>
+
+      <section class="actions" aria-label="Xuất dữ liệu">
+        <button id="export-csv" class="highlight" type="button">CSV đã lọc</button>
+        <button id="export-all-csv" type="button">CSV toàn bộ</button>
+        <button id="export-json" type="button">JSON toàn bộ</button>
+        <button id="clear" class="danger" type="button">Xóa dữ liệu</button>
+      </section>
+
+      <footer>
+        Extension chỉ đọc nội dung sản phẩm đang hiển thị. Gặp CAPTCHA/Robot Check, phiên sẽ tự dừng.
+      </footer>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>
