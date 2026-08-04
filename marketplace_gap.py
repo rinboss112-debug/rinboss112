@@ -108,6 +108,13 @@ def normalize_temu_extension_frame(frame: pd.DataFrame) -> pd.DataFrame:
     for column in ("price", "original_price", "units_sold", "rating", "review_count"):
         result[column] = result[column].map(_number)
     result["free_shipping"] = result["free_shipping"].map(_bool)
+    invalid_title = result["title"].str.contains(
+        r"(?:USD|CNY|EUR|GBP|CAD|AUD)\s*[\d,.]+\s*=\s*(?:USD|CNY|EUR|GBP|CAD|AUD)\s*[\d,.]+",
+        case=False,
+        regex=True,
+        na=False,
+    )
+    result = result[~invalid_title]
     result = result[result["title"].ne("") & result["price"].gt(0)]
     identity = result["product_id"].where(result["product_id"].ne(""), result["product_url"])
     identity = identity.where(identity.ne(""), result["title"].str.casefold())

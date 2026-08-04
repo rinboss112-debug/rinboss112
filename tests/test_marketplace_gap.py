@@ -36,6 +36,14 @@ class MarketplaceGapTests(unittest.TestCase):
         self.assertEqual(result.iloc[0]["price"], 31.99)
         self.assertEqual(result.iloc[0]["units_sold"], 2000)
 
+    def test_temu_normalization_rejects_currency_converter_title(self) -> None:
+        frame = pd.DataFrame([
+            {"title": "USD 100 = CNY 690.34", "price": "$29.99", "product_id": "bad"},
+            {"title": "Under Sink Organizer Sliding Drawer", "price": "$19.99", "product_id": "good"},
+        ])
+        result = normalize_temu_extension_frame(frame)
+        self.assertEqual(result["title"].tolist(), ["Under Sink Organizer Sliding Drawer"])
+
     def test_json_can_read_two_source_extension_export(self) -> None:
         payload = json.dumps({
             "version": 2,
@@ -92,10 +100,14 @@ class MarketplaceGapTests(unittest.TestCase):
         amazon_manifest = json.loads((amazon_dir / "manifest.json").read_text(encoding="utf-8"))
         market_manifest = json.loads((market_dir / "manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(amazon_manifest["version"], "1.2.0")
-        self.assertEqual(market_manifest["version"], "2.0.0")
+        self.assertEqual(market_manifest["version"], "2.0.1")
         self.assertNotEqual(amazon_manifest["name"], market_manifest["name"])
         self.assertIn("https://www.temu.com/*", market_manifest["host_permissions"])
         self.assertTrue((market_dir / "temu_content.js").exists())
+        temu_source = (market_dir / "temu_content.js").read_text(encoding="utf-8")
+        self.assertIn("[role='group'][aria-label]", temu_source)
+        self.assertIn("USD|CNY|EUR|GBP|CAD|AUD", temu_source)
+        self.assertNotIn('querySelector?.("[title]")', temu_source)
         app_source = (project / "app.py").read_text(encoding="utf-8")
         self.assertIn('url_path="marketplace-extension"', app_source)
 

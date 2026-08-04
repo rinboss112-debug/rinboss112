@@ -1,4 +1,4 @@
-# RinBoss Marketplace Collector 2.0
+# RinBoss Marketplace Collector 2.0.1
 
 Extension này độc lập với **RinBoss Amazon Collector 1.2**. Có thể cài cả hai trong
 Chrome; chúng dùng tên và vùng lưu dữ liệu khác nhau nên không ghi đè kết quả của nhau.

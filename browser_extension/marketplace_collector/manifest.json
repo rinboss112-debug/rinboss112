@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "RinBoss Marketplace Collector",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Thu thập kết quả đang hiển thị trên Amazon hoặc Temu US và xuất CSV để đối chiếu giá.",
   "minimum_chrome_version": "102",
   "action": {

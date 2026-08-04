@@ -52,6 +52,10 @@
     return match?.[1] || "";
   };
   const closestCard = (anchor) => {
+    const labelledGroup = anchor.closest?.("[role='group'][aria-label]");
+    if (labelledGroup && labelledGroup.querySelector("img") && /\$\s*\d/.test(labelledGroup.innerText || "")) {
+      return labelledGroup;
+    }
     let node = anchor;
     for (let depth = 0; node && depth < 7; depth += 1, node = node.parentElement) {
       const text = normalize(node.innerText);
@@ -59,15 +63,34 @@
     }
     return anchor.parentElement;
   };
+  const isInvalidTitle = (value) => {
+    const text = normalize(value);
+    if (text.length < 12 || text.length > 500) return true;
+    if (/(?:USD|CNY|EUR|GBP|CAD|AUD)\s*[\d,.]+\s*=\s*(?:USD|CNY|EUR|GBP|CAD|AUD)\s*[\d,.]+/i.test(text)) {
+      return true;
+    }
+    if (/^(?:US\s*)?\$\s*[\d,.]+(?:\s*[-–]\s*(?:US\s*)?\$?\s*[\d,.]+)?$/i.test(text)) return true;
+    if (/^(?:add to cart|open in new tab|free shipping|original price|subtotal|sold|sponsored)$/i.test(text)) {
+      return true;
+    }
+    return (text.match(/[A-Za-z][A-Za-z0-9'’&/-]*/g) || []).length < 3;
+  };
+  const cleanTitle = (value) => normalize(value)
+    .replace(/^(?:(?:top pick|local|ad|sponsored)\s+)+/i, "")
+    .replace(/\s+Open in new tab\.?$/i, "")
+    .replace(/^item picture\s+/i, "")
+    .trim();
   const titleFor = (anchor, card) => {
     const candidates = [
+      card?.getAttribute?.("aria-label"),
+      card?.querySelector?.("h2")?.textContent,
       anchor.getAttribute("aria-label"),
       anchor.getAttribute("title"),
-      card?.querySelector?.("[title]")?.getAttribute("title"),
-      card?.querySelector?.("h2, h3, [class*='title'], [data-testid*='title']")?.textContent,
+      card?.querySelector?.("h3, [data-testid*='product-title'], [data-testid*='goods-title']")?.textContent,
+      card?.querySelector?.("img[alt*='item picture' i]")?.getAttribute("alt"),
       anchor.textContent,
-    ].map(normalize).filter(Boolean);
-    return candidates.find((value) => value.length >= 12 && !/^\$/.test(value)) || "";
+    ].map(cleanTitle).filter(Boolean);
+    return candidates.find((value) => !isInvalidTitle(value)) || "";
   };
 
   const anchors = Array.from(document.querySelectorAll("a[href*='goods.html'], a[href*='-g-']"));
@@ -83,13 +106,15 @@
     const identity = id || url;
     if (!identity || seen.has(identity) || !title || !price) continue;
     seen.add(identity);
-    const image = card?.querySelector?.("img");
+    const image = card?.querySelector?.("img[alt*='item picture' i], img.goods-img-external, img");
     const soldMatch = cardText.match(/(?:^|\s)([\d,.]+\s*[KM]?\+?)\s*(?:sold|bought)/i);
-    const reviewMatch = cardText.match(/\(([\d,.]+\s*[KM]?)\)/i);
-    const ratingMatch = cardText.match(/(?:^|\s)([0-5](?:\.\d)?)\s*(?:stars?|\u2605)/i);
+    const reviewMatch = cardText.match(/(?:\(([\d,.]+\s*[KM]?)\)|([\d,.]+\s*[KM]?)\s+reviews?)/i);
+    const ratingLabel = card?.querySelector?.("[aria-label*='out of five stars' i]")?.getAttribute("aria-label") || "";
+    const ratingMatch = `${ratingLabel} ${cardText}`.match(/(?:^|\s)([0-5](?:\.\d)?)\s*(?:out of five stars|stars?|\u2605)/i);
     const originalMatches = Array.from(cardText.matchAll(/\$\s*(\d+(?:\.\d{1,2})?)/g)).map((match) => Number(match[1]));
-    const originalPrice = originalMatches.find((value) => value > price) || null;
-    const badge = (cardText.match(/(?:best seller|top rated|popular|almost sold out|limited time deal)/i) || [""])[0];
+    const explicitOriginal = cardText.match(/Original price\s*\$\s*(\d+(?:\.\d{1,2})?)/i);
+    const originalPrice = explicitOriginal ? Number(explicitOriginal[1]) : (originalMatches.find((value) => value > price) || null);
+    const badge = (cardText.match(/(?:#\d+\s+BEST-SELLING ITEM|best seller|top pick|top rated|popular|almost sold out|limited time deal|last day)/i) || [""])[0];
     products.push({
       source: "temu",
       title,
@@ -102,7 +127,7 @@
       units_sold: parseNumber(soldMatch?.[1]),
       sold_text: normalize(soldMatch?.[0]),
       rating: parseNumber(ratingMatch?.[1]),
-      review_count: parseNumber(reviewMatch?.[1]),
+      review_count: parseNumber(reviewMatch?.[1] || reviewMatch?.[2]),
       badge: normalize(badge),
       free_shipping: /free shipping/i.test(cardText),
       scraped_at: new Date().toISOString(),

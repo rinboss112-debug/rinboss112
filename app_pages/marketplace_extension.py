@@ -36,9 +36,9 @@ with st.container(border=True):
     )
     try:
         st.download_button(
-            "Tải Marketplace Collector 2.0",
+            "Tải Marketplace Collector 2.0.1",
             data=_extension_package(),
-            file_name="rinboss_marketplace_collector_v2.0.0.zip",
+            file_name="rinboss_marketplace_collector_v2.0.1.zip",
             mime="application/zip",
             icon=":material/download:",
             key="download_marketplace_extension",
