@@ -220,6 +220,13 @@ kết quả giữ nguyên cột cũ và thêm `image_url_1...`, `image_gallery_c
 `image_gallery_status`. Extension dừng khi gặp CAPTCHA và hỗ trợ dừng sau sản phẩm
 hiện tại. Mã nguồn nằm trong `browser_extension/product_image_collector/`.
 
+### Tải ảnh theo tên
+
+Trang `/download-images` (chỉ dành cho admin) cho phép dán hai cột tên/link hoặc tải
+CSV/XLSX, tải tối đa 200 ảnh công khai mỗi lượt và gom thành ZIP. Ảnh được đặt theo
+tên người dùng cung cấp; ký tự Windows cấm được thay bằng `_`, còn tên trùng được thêm
+`_2`, `_3`. ZIP kèm `_download_report.csv` để kiểm tra dòng thành công hoặc lỗi.
+
 ## Xuất Excel cho TikTok Shop US
 
 Mở đường dẫn /tiktok-shop-us trên app và đăng nhập bằng mật khẩu admin.
