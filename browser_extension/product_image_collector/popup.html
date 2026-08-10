@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RinBoss Product Image Collector</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <span class="eyebrow">RINBOSS COMMERCE</span>
+        <h1>Product Image Collector</h1>
+        <p>Nhập CSV Amazon hoặc Temu và bổ sung ảnh gallery ngay trên trình duyệt của bạn.</p>
+      </header>
+
+      <section class="card">
+        <div class="section-title">
+          <div><span class="step">BƯỚC 1</span><h2>Nhập danh sách sản phẩm</h2></div>
+          <label class="file-button" for="csv-file">Chọn CSV</label>
+          <input id="csv-file" type="file" accept=".csv,text/csv" hidden>
+        </div>
+        <p id="file-name" class="file-name">Chưa chọn file.</p>
+        <p class="hint">Tự nhận cột product_url, amazon_url, temu_url, url, link; hoặc tạo link Amazon từ cột asin.</p>
+      </section>
+
+      <section class="stats" aria-label="Thống kê">
+        <div><strong id="row-count">0</strong><span>Dòng CSV</span></div>
+        <div><strong id="valid-count">0</strong><span>Link hợp lệ</span></div>
+        <div><strong id="done-count">0</strong><span>Đã xử lý</span></div>
+      </section>
+
+      <section class="card">
+        <div class="section-title compact"><div><span class="step">BƯỚC 2</span><h2>Thiết lập lấy ảnh</h2></div></div>
+        <div class="field-grid">
+          <label>
+            <span>Số ảnh mỗi sản phẩm</span>
+            <input id="max-images" type="number" min="1" max="10" value="5">
+          </label>
+          <label>
+            <span>Nghỉ giữa sản phẩm (giây)</span>
+            <input id="delay-seconds" type="number" min="5" max="120" value="8">
+          </label>
+        </div>
+        <div class="actions">
+          <button id="start" class="primary" type="button" disabled>Bắt đầu lấy ảnh</button>
+          <button id="stop" class="danger" type="button" disabled>Dừng sau sản phẩm này</button>
+        </div>
+
+        <section id="progress-wrap" class="progress-wrap" hidden>
+          <div class="progress-label"><strong id="progress-status">Chờ</strong><span id="progress-percent">0%</span></div>
+          <div class="progress-track"><span id="progress-bar"></span></div>
+          <p id="progress-detail" class="hint"></p>
+        </section>
+      </section>
+
+      <p id="status" class="status" role="status">Hãy chọn file CSV để bắt đầu.</p>
+
+      <section class="export-actions">
+        <button id="export" class="highlight" type="button" disabled>Tải CSV có ảnh</button>
+        <button id="clear" type="button" disabled>Xóa phiên hiện tại</button>
+      </section>
+
+      <footer>
+        Extension chỉ đọc trang sản phẩm đang mở trong tab nền. Gặp CAPTCHA/Robot Check sẽ dừng, không tự vượt xác minh.
+      </footer>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

@@ -92,6 +92,12 @@ marketplace_extension_page = st.Page(
     icon=":material/extension:",
     url_path="marketplace-extension",
 )
+image_extension_page = st.Page(
+    "app_pages/image_extension.py",
+    title="Extension ảnh",
+    icon=":material/imagesmode:",
+    url_path="image-extension",
+)
 temu_hot_products_page = st.Page(
     "app_pages/temu_hot_products.py",
     title="Sản phẩm hot Temu",
@@ -139,6 +145,7 @@ navigation_pages: dict[str, list[Any]] = {
         scraper_page,
         amazon_extension_page,
         marketplace_extension_page,
+        image_extension_page,
         tiktok_export_page,
         amazon_images_page,
         temu_hot_products_page,

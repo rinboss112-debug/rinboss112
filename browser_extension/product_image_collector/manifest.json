@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "RinBoss Product Image Collector",
+  "version": "1.0.0",
+  "description": "Nhập CSV Amazon hoặc Temu, lấy nhiều ảnh gallery bằng trình duyệt hiện tại và xuất CSV mới.",
+  "minimum_chrome_version": "102",
+  "action": {
+    "default_title": "RinBoss Product Image Collector",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "alarms",
+    "scripting",
+    "storage",
+    "tabs",
+    "unlimitedStorage"
+  ],
+  "host_permissions": [
+    "https://www.amazon.com/*",
+    "https://amazon.com/*",
+    "https://temu.com/*",
+    "https://www.temu.com/*",
+    "https://*.temu.com/*"
+  ]
+}

@@ -212,6 +212,14 @@ không khẳng định hai listing là cùng một SKU: cần mở cả hai link
 size, pack, thương hiệu, quyền bán và toàn bộ chi phí. Mã nguồn nằm trong
 `browser_extension/amazon_product_collector/` và `browser_extension/marketplace_collector/`.
 
+### Product Image Collector
+
+Trang `/image-extension` cung cấp extension riêng để nhập CSV Amazon/Temu, mở từng
+trang sản phẩm bằng trình duyệt của người dùng và bổ sung từ 1–10 ảnh gallery. CSV
+kết quả giữ nguyên cột cũ và thêm `image_url_1...`, `image_gallery_count`,
+`image_gallery_status`. Extension dừng khi gặp CAPTCHA và hỗ trợ dừng sau sản phẩm
+hiện tại. Mã nguồn nằm trong `browser_extension/product_image_collector/`.
+
 ## Xuất Excel cho TikTok Shop US
 
 Mở đường dẫn /tiktok-shop-us trên app và đăng nhập bằng mật khẩu admin.

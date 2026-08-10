@@ -71,6 +71,14 @@ with st.container(border=True):
         "độ khớp, số đã bán và lợi nhuận ước tính."
     )
 
+with st.container(border=True):
+    st.subheader("Cần thêm ảnh gallery?", anchor=False)
+    st.markdown(
+        "Sau khi xuất CSV, mở trang **Extension ảnh**, nhập file và lấy từ 1–10 ảnh "
+        "phía sau cho từng sản phẩm Amazon hoặc Temu."
+    )
+    st.caption("Chọn **Extension ảnh** trên thanh điều hướng để tải công cụ.")
+
 st.warning(
     "Extension không vượt CAPTCHA và không bảo đảm hai listing là cùng một SKU. "
     "Phải kiểm tra lại ảnh, size, pack, thương hiệu và quyền bán trước khi sử dụng.",
