@@ -1,5 +1,7 @@
 # Amazon Product Scraper
 
+> Dành cho AI agent hoặc lập trình viên tiếp quản dự án: đọc [AGENTS.md](AGENTS.md) trước khi sửa code. Tài liệu này mô tả kiến trúc, luồng dữ liệu, route, secrets, kiểm thử và quy tắc chỉ phát triển trên nhánh `dev`.
+
 Web app Streamlit tiếng Việt để chạy tuần tự nhiều ngách Amazon, theo dõi log trực tiếp, lưu CSV sau từng ngách và đồng bộ kết quả lên Google Drive.
 
 > Workspace ban đầu không có `amazon_scraper.py` gốc. Project này dùng scraper `requests` + Beautiful Soup, tách riêng khỏi giao diện để có thể thay backend sau này.
