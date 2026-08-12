@@ -36,9 +36,9 @@ with st.container(border=True):
     )
     try:
         st.download_button(
-            "Tải Product Image Collector 1.0.0",
+            "Tải Product Image Collector 1.1.0",
             data=_extension_package(),
-            file_name="rinboss_product_image_collector_v1.0.0.zip",
+            file_name="rinboss_product_image_collector_v1.1.0.zip",
             mime="application/zip",
             icon=":material/download:",
             key="download_product_image_collector",
@@ -48,10 +48,10 @@ with st.container(border=True):
 
 steps = st.columns(3)
 with steps[0].container(border=True, height="stretch"):
-    st.subheader("1. Nhập CSV", anchor=False)
+    st.subheader("1. Dán link hoặc nhập CSV", anchor=False)
     st.markdown(
-        "CSV cần có link trong một trong các cột: `product_url`, `amazon_url`, "
-        "`temu_url`, `url`, `link`; Amazon cũng nhận cột `asin`."
+        "Có thể dán trực tiếp tối đa 10 link, mỗi dòng một link. Hoặc nhập CSV có cột "
+        "`product_url`, `amazon_url`, `temu_url`, `url`, `link`; Amazon cũng nhận cột `asin`."
     )
 with steps[1].container(border=True, height="stretch"):
     st.subheader("2. Lấy gallery", anchor=False)
@@ -84,7 +84,7 @@ with st.container(border=True):
     )
 
 st.warning(
-    "Nên để nghỉ 8–15 giây giữa sản phẩm. Extension không vượt CAPTCHA, không đổi IP "
+    "Nên chạy 3–10 link mỗi lượt và để nghỉ 8–15 giây giữa sản phẩm. Extension không vượt CAPTCHA, không đổi IP "
     "và sẽ tự dừng khi website yêu cầu xác minh.",
     icon=":material/warning:",
 )

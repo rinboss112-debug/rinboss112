@@ -202,7 +202,7 @@ Ba extension là các sản phẩm độc lập và có manifest riêng:
 
 - `browser_extension/amazon_product_collector/`: nhập TXT nhiều ngách, tìm kiếm Amazon, lọc giá và xuất CSV.
 - `browser_extension/marketplace_collector/`: thu thập Temu US và Amazon để so sánh giá.
-- `browser_extension/product_image_collector/`: nhập CSV, mở link sản phẩm và bổ sung `image_url_1...image_url_10`.
+- `browser_extension/product_image_collector/`: dán trực tiếp tối đa 10 link hoặc nhập CSV, mở tuần tự link sản phẩm và bổ sung `image_url_1...image_url_10`.
 
 Extension chạy trong Chrome của người dùng nên có thể thấy giao diện/phiên khác với request phía Streamlit Cloud. Không thu thập cookie, mật khẩu hoặc token; không giải CAPTCHA. Khi sửa extension phải tăng version trong `manifest.json` và kiểm tra lại file ZIP do trang Streamlit cung cấp.
 

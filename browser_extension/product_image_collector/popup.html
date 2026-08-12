@@ -11,7 +11,7 @@
       <header>
         <span class="eyebrow">RINBOSS COMMERCE</span>
         <h1>Product Image Collector</h1>
-        <p>Nhập CSV Amazon hoặc Temu và bổ sung ảnh gallery ngay trên trình duyệt của bạn.</p>
+        <p>Dán vài link hoặc nhập CSV Amazon/Temu để bổ sung ảnh gallery ngay trên trình duyệt của bạn.</p>
       </header>
 
       <section class="card">
@@ -22,10 +22,16 @@
         </div>
         <p id="file-name" class="file-name">Chưa chọn file.</p>
         <p class="hint">Tự nhận cột product_url, amazon_url, temu_url, url, link; hoặc tạo link Amazon từ cột asin.</p>
+        <div class="direct-entry">
+          <label for="direct-links">Hoặc dán thẳng link sản phẩm, mỗi dòng một link</label>
+          <textarea id="direct-links" rows="5" placeholder="https://www.amazon.com/dp/B07CBKMHSW&#10;https://www.amazon.com/dp/..."></textarea>
+          <button id="load-links" class="direct-load" type="button">Nạp danh sách link</button>
+          <p class="hint">Tối đa 10 link/lượt; nên chạy 3–10 link và nghỉ 8–15 giây giữa sản phẩm.</p>
+        </div>
       </section>
 
       <section class="stats" aria-label="Thống kê">
-        <div><strong id="row-count">0</strong><span>Dòng CSV</span></div>
+        <div><strong id="row-count">0</strong><span>Sản phẩm</span></div>
         <div><strong id="valid-count">0</strong><span>Link hợp lệ</span></div>
         <div><strong id="done-count">0</strong><span>Đã xử lý</span></div>
       </section>
@@ -54,7 +60,7 @@
         </section>
       </section>
 
-      <p id="status" class="status" role="status">Hãy chọn file CSV để bắt đầu.</p>
+      <p id="status" class="status" role="status">Hãy dán link hoặc chọn file CSV để bắt đầu.</p>
 
       <section class="export-actions">
         <button id="export" class="highlight" type="button" disabled>Tải CSV có ảnh</button>

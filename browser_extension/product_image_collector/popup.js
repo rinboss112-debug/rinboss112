@@ -1,9 +1,10 @@
 "use strict";
 
 const STATE_KEY = "rinbossImageCollectorState";
+const MAX_DIRECT_LINKS = 10;
 const URL_ALIASES = ["product url", "amazon url", "temu url", "product link", "url", "link"];
 const el = Object.fromEntries([
-  "csv-file", "file-name", "row-count", "valid-count", "done-count", "max-images",
+  "csv-file", "file-name", "direct-links", "load-links", "row-count", "valid-count", "done-count", "max-images",
   "delay-seconds", "start", "stop", "progress-wrap", "progress-status", "progress-percent",
   "progress-bar", "progress-detail", "status", "export", "clear",
 ].map((id) => [id.replace(/-([a-z])/g, (_match, letter) => letter.toUpperCase()), document.querySelector(`#${id}`)]));
@@ -65,6 +66,39 @@ const rowUrl = (row, headers) => {
   return /^[A-Z0-9]{10}$/i.test(asin) ? `https://www.amazon.com/dp/${asin}` : "";
 };
 
+const parseDirectLinks = (text) => {
+  const rawLinks = String(text || "").split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+  if (!rawLinks.length) throw new Error("Hãy dán ít nhất một link sản phẩm.");
+  if (rawLinks.length > MAX_DIRECT_LINKS) {
+    throw new Error(`Mỗi lượt dán tối đa ${MAX_DIRECT_LINKS} link để hạn chế bị website chặn.`);
+  }
+  const headers = ["product_url"];
+  const seen = new Set();
+  const rows = [];
+  const invalidLines = [];
+  let duplicateCount = 0;
+  rawLinks.forEach((value, index) => {
+    const row = { product_url: value };
+    const url = rowUrl(row, headers);
+    if (!url) {
+      invalidLines.push(index + 1);
+      return;
+    }
+    const key = url.toLowerCase();
+    if (seen.has(key)) {
+      duplicateCount += 1;
+      return;
+    }
+    seen.add(key);
+    rows.push(row);
+  });
+  if (invalidLines.length) {
+    throw new Error(`Link không hợp lệ ở dòng ${invalidLines.join(", ")}. Chỉ nhận link Amazon.com hoặc Temu.com.`);
+  }
+  if (!rows.length) throw new Error("Không còn link hợp lệ sau khi bỏ dòng trùng.");
+  return { headers, rows, duplicateCount };
+};
+
 const csvValue = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
 const timestamp = () => new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 const setStatus = (message, kind = "") => {
@@ -72,6 +106,33 @@ const setStatus = (message, kind = "") => {
   el.status.className = `status ${kind}`.trim();
 };
 const getState = async () => (await chrome.storage.local.get(STATE_KEY))[STATE_KEY] || null;
+
+const loadRows = async ({ sourceName, headers, rows, message }) => {
+  const previous = await getState();
+  if (previous?.running) throw new Error("Hãy dừng phiên đang chạy trước khi nạp danh sách mới.");
+  const preparedRows = rows.map((row) => rowUrl(row, headers)
+    ? row
+    : { ...row, image_gallery_count: 0, image_gallery_status: "missing_url" });
+  const validCount = preparedRows.filter((row) => rowUrl(row, headers)).length;
+  if (!validCount) throw new Error("Không tìm thấy link Amazon/Temu hoặc ASIN hợp lệ.");
+  await chrome.storage.local.set({
+    [STATE_KEY]: {
+      version: 2,
+      sourceName,
+      headers,
+      rows: preparedRows,
+      running: false,
+      stopRequested: false,
+      status: "ready",
+      processed: 0,
+      total: validCount,
+      maxImages: Math.min(10, Math.max(1, Number(el.maxImages.value) || 5)),
+      delaySeconds: Math.min(120, Math.max(5, Number(el.delaySeconds.value) || 8)),
+      message: message || `Đã nạp ${rows.length} dòng; có ${validCount} link hợp lệ.`,
+    },
+  });
+  await render();
+};
 
 const render = async () => {
   const state = await getState();
@@ -83,6 +144,7 @@ const render = async () => {
   el.validCount.textContent = String(valid);
   el.doneCount.textContent = String(done);
   el.start.disabled = Boolean(state?.running) || valid === 0;
+  el.loadLinks.disabled = Boolean(state?.running);
   el.stop.disabled = !state?.running || Boolean(state?.stopRequested);
   el.export.disabled = rows.length === 0 || done === 0;
   el.clear.disabled = rows.length === 0 || Boolean(state?.running);
@@ -114,31 +176,29 @@ el.csvFile.addEventListener("change", async () => {
   if (!file) return;
   try {
     const parsed = parseCsv(await file.text());
-    const preparedRows = parsed.rows.map((row) => rowUrl(row, parsed.headers)
-      ? row
-      : { ...row, image_gallery_count: 0, image_gallery_status: "missing_url" });
-    const validCount = preparedRows.filter((row) => rowUrl(row, parsed.headers)).length;
-    if (!validCount) throw new Error("Không tìm thấy link Amazon/Temu hoặc ASIN hợp lệ trong CSV.");
-    const previous = await getState();
-    if (previous?.running) throw new Error("Hãy dừng phiên đang chạy trước khi nhập CSV mới.");
-    await chrome.storage.local.set({
-      [STATE_KEY]: {
-        version: 1,
-        sourceName: file.name,
-        headers: parsed.headers,
-        rows: preparedRows,
-        running: false,
-        stopRequested: false,
-        status: "ready",
-        processed: 0,
-        total: validCount,
-        maxImages: Math.min(10, Math.max(1, Number(el.maxImages.value) || 5)),
-        delaySeconds: Math.min(120, Math.max(5, Number(el.delaySeconds.value) || 8)),
-        message: `Đã nhập ${parsed.rows.length} dòng; có ${validCount} link hợp lệ.`,
-      },
+    await loadRows({
+      sourceName: file.name,
+      headers: parsed.headers,
+      rows: parsed.rows,
+      message: `Đã nhập ${parsed.rows.length} dòng từ CSV.`,
     });
-    await render();
     setStatus(`Đã nhập ${file.name}.`, "success");
+  } catch (error) {
+    setStatus(error?.message || String(error), "error");
+  }
+});
+
+el.loadLinks.addEventListener("click", async () => {
+  try {
+    const parsed = parseDirectLinks(el.directLinks.value);
+    const duplicateNote = parsed.duplicateCount ? `; đã bỏ ${parsed.duplicateCount} link trùng` : "";
+    await loadRows({
+      sourceName: "direct_product_links.csv",
+      headers: parsed.headers,
+      rows: parsed.rows,
+      message: `Đã nạp ${parsed.rows.length} link trực tiếp${duplicateNote}.`,
+    });
+    setStatus(`Đã nạp ${parsed.rows.length} link. Chọn 5 ảnh rồi bấm bắt đầu.`, "success");
   } catch (error) {
     setStatus(error?.message || String(error), "error");
   }
@@ -183,6 +243,7 @@ el.clear.addEventListener("click", async () => {
   if (!confirm("Xóa file và toàn bộ tiến độ ảnh của phiên hiện tại?")) return;
   await chrome.runtime.sendMessage({ type: "CLEAR_IMAGE_BATCH" });
   el.csvFile.value = "";
+  el.directLinks.value = "";
   await render();
   setStatus("Đã xóa phiên hiện tại.", "success");
 });

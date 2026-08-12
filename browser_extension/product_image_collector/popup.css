@@ -19,6 +19,11 @@ p { margin: 0; color: #647087; font-size: 12px; line-height: 1.45; }
 .file-button { padding: 8px 11px; border: 1px solid #e66b00; border-radius: 8px; color: #b64d00; cursor: pointer; font-size: 11px; font-weight: 800; }
 .file-name { color: #39465d; font-weight: 700; overflow-wrap: anywhere; }
 .hint { margin-top: 5px; color: #8992a3; font-size: 10px; }
+.direct-entry { margin-top: 11px; padding-top: 11px; border-top: 1px solid #f0dcc3; }
+.direct-entry > label { display: block; margin-bottom: 5px; color: #596579; font-size: 11px; font-weight: 750; }
+textarea { width: 100%; min-height: 88px; resize: vertical; padding: 8px 9px; border: 1px solid #d8dee9; border-radius: 8px; color: #263248; background: #fff; font: 11px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; }
+textarea:focus { border-color: #e66b00; outline: 2px solid rgba(230,107,0,.12); }
+.direct-load { width: 100%; min-height: 35px; margin-top: 7px; border-color: #e5b47d; color: #a94b00; background: #fff9f1; }
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 11px 0; }
 .stats div { padding: 10px; border: 1px solid #f0dcc3; border-radius: 11px; background: rgba(255,255,255,.94); }
 .stats strong, .stats span { display: block; }

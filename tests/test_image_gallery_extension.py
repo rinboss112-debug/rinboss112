@@ -16,7 +16,7 @@ class ImageGalleryExtensionTests(unittest.TestCase):
         project = Path(__file__).resolve().parents[1]
         extension = project / "browser_extension" / "product_image_collector"
         manifest = json.loads((extension / "manifest.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["version"], "1.0.0")
+        self.assertEqual(manifest["version"], "1.1.0")
         self.assertEqual(manifest["background"]["service_worker"], "background.js")
         self.assertIn("alarms", manifest["permissions"])
         self.assertIn("https://www.amazon.com/*", manifest["host_permissions"])
@@ -35,10 +35,15 @@ class ImageGalleryExtensionTests(unittest.TestCase):
         project = Path(__file__).resolve().parents[1]
         extension = project / "browser_extension" / "product_image_collector"
         popup = (extension / "popup.js").read_text(encoding="utf-8")
+        popup_html = (extension / "popup.html").read_text(encoding="utf-8")
         background = (extension / "background.js").read_text(encoding="utf-8")
         amazon = (extension / "amazon_gallery.js").read_text(encoding="utf-8")
         temu = (extension / "temu_gallery.js").read_text(encoding="utf-8")
         self.assertIn("parseCsv", popup)
+        self.assertIn("parseDirectLinks", popup)
+        self.assertIn("MAX_DIRECT_LINKS = 10", popup)
+        self.assertIn('id="direct-links"', popup_html)
+        self.assertIn('id="load-links"', popup_html)
         self.assertIn("image_gallery_status", popup)
         self.assertIn("STOP_IMAGE_BATCH", background)
         self.assertIn("amazon_gallery.js", background)
