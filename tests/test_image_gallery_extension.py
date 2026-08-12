@@ -16,7 +16,7 @@ class ImageGalleryExtensionTests(unittest.TestCase):
         project = Path(__file__).resolve().parents[1]
         extension = project / "browser_extension" / "product_image_collector"
         manifest = json.loads((extension / "manifest.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["version"], "1.1.2")
+        self.assertEqual(manifest["version"], "1.1.3")
         self.assertEqual(manifest["background"]["service_worker"], "background.js")
         self.assertIn("alarms", manifest["permissions"])
         self.assertIn("https://www.amazon.com/*", manifest["host_permissions"])
@@ -41,7 +41,7 @@ class ImageGalleryExtensionTests(unittest.TestCase):
         temu = (extension / "temu_gallery.js").read_text(encoding="utf-8")
         self.assertIn("parseCsv", popup)
         self.assertIn("parseDirectLinks", popup)
-        self.assertIn("MAX_DIRECT_LINKS = 10", popup)
+        self.assertIn("MAX_DIRECT_LINKS = 100", popup)
         self.assertIn("version: 3", popup)
         self.assertIn('image_gallery_status: ""', popup)
         self.assertIn('id="direct-links"', popup_html)
@@ -71,7 +71,7 @@ class ImageGalleryExtensionTests(unittest.TestCase):
         app.run()
         self.assertEqual([], list(app.exception))
         self.assertEqual(1, len(app.download_button))
-        self.assertEqual("Tải Product Image Collector 1.1.2", app.download_button[0].label)
+        self.assertEqual("Tải Product Image Collector 1.1.3", app.download_button[0].label)
 
 
 if __name__ == "__main__":

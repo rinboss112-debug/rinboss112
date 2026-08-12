@@ -1,7 +1,7 @@
 "use strict";
 
 const STATE_KEY = "rinbossImageCollectorState";
-const MAX_DIRECT_LINKS = 10;
+const MAX_DIRECT_LINKS = 100;
 const URL_ALIASES = ["product url", "amazon url", "temu url", "product link", "url", "link"];
 const el = Object.fromEntries([
   "csv-file", "file-name", "direct-links", "load-links", "row-count", "valid-count", "done-count", "max-images",
@@ -70,7 +70,7 @@ const parseDirectLinks = (text) => {
   const rawLinks = String(text || "").split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
   if (!rawLinks.length) throw new Error("Hãy dán ít nhất một link sản phẩm.");
   if (rawLinks.length > MAX_DIRECT_LINKS) {
-    throw new Error(`Mỗi lượt dán tối đa ${MAX_DIRECT_LINKS} link để hạn chế bị website chặn.`);
+    throw new Error(`Mỗi lượt dán tối đa ${MAX_DIRECT_LINKS} link. Nên đặt thời gian nghỉ 10–15 giây khi chạy danh sách lớn.`);
   }
   const headers = ["product_url"];
   const seen = new Set();
