@@ -16,7 +16,7 @@ class ImageGalleryExtensionTests(unittest.TestCase):
         project = Path(__file__).resolve().parents[1]
         extension = project / "browser_extension" / "product_image_collector"
         manifest = json.loads((extension / "manifest.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["version"], "1.1.0")
+        self.assertEqual(manifest["version"], "1.1.1")
         self.assertEqual(manifest["background"]["service_worker"], "background.js")
         self.assertIn("alarms", manifest["permissions"])
         self.assertIn("https://www.amazon.com/*", manifest["host_permissions"])
@@ -49,6 +49,10 @@ class ImageGalleryExtensionTests(unittest.TestCase):
         self.assertIn("amazon_gallery.js", background)
         self.assertIn("temu_gallery.js", background)
         self.assertIn("data-a-dynamic-image", amazon)
+        self.assertIn("#imageBlock_feature_div", amazon)
+        self.assertIn("/^\\/images\\/I\\//i", amazon)
+        self.assertNotIn('document.querySelectorAll("script")', amazon)
+        self.assertNotIn('img[data-a-dynamic-image]', amazon)
         self.assertIn("application/ld+json", temu)
 
     def test_app_registers_and_renders_download_page(self) -> None:

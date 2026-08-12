@@ -36,9 +36,9 @@ with st.container(border=True):
     )
     try:
         st.download_button(
-            "Tải Product Image Collector 1.1.0",
+            "Tải Product Image Collector 1.1.1",
             data=_extension_package(),
-            file_name="rinboss_product_image_collector_v1.1.0.zip",
+            file_name="rinboss_product_image_collector_v1.1.1.zip",
             mime="application/zip",
             icon=":material/download:",
             key="download_product_image_collector",
