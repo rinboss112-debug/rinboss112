@@ -64,7 +64,10 @@ const findPendingIndexes = (state, maximum) => (state.rows || []).map((_row, ind
   const row = state.rows[index];
   const url = productUrl(row, state.headers);
   const count = Number(row.image_gallery_count) || 0;
-  return Boolean(url) && !(row.image_gallery_status === "complete" && count >= maximum);
+  const cleanVersionComplete = Number(state.version || 0) >= 3
+    && row.image_gallery_status === "complete"
+    && count >= maximum;
+  return Boolean(url) && !cleanVersionComplete;
 });
 
 const navigateCurrent = async () => {
@@ -110,16 +113,49 @@ const navigateCurrent = async () => {
   }
 };
 
-const mergeImages = (row, incoming, maximum) => {
+const normalizeImageCandidate = (value, source) => {
+  const raw = String(value || "").trim();
+  if (!/^https?:\/\//i.test(raw)) return null;
+  try {
+    const parsed = new URL(raw);
+    parsed.hash = "";
+
+    if (source?.name === "Amazon") {
+      const validHost = /(?:^|\.)(?:media-amazon\.com|ssl-images-amazon\.com|amazon\.com)$/i.test(parsed.hostname);
+      const productPath = /^\/images\/I\//i.test(parsed.pathname);
+      const knownNonProduct = /(?:prime[_-]?logo|marketing\/prime|\/images\/G\/)/i.test(raw);
+      if (!validHost || !productPath || knownNonProduct) return null;
+      parsed.pathname = parsed.pathname.replace(/\._[^/]*_(?=\.[a-zA-Z0-9]+$)/, "");
+      parsed.search = "";
+      return { url: parsed.toString(), key: parsed.pathname };
+    }
+
+    // Temu often serves the same asset with different resize query strings.
+    // Keep the usable URL but compare by host + path to avoid duplicate images.
+    return {
+      url: parsed.toString(),
+      key: `${parsed.hostname.toLowerCase()}${parsed.pathname}`,
+    };
+  } catch (_error) {
+    return null;
+  }
+};
+
+const mergeImages = (row, incoming, maximum, source) => {
   const images = [];
+  const seen = new Set();
+  const primary = normalizeImageCandidate(row.image_url, source);
+  if (primary) seen.add(primary.key);
+
   const add = (value) => {
-    const url = String(value || "").trim();
-    if (/^https?:\/\//i.test(url) && !images.includes(url) && images.length < maximum) images.push(url);
+    const candidate = normalizeImageCandidate(value, source);
+    if (!candidate || seen.has(candidate.key) || images.length >= maximum) return;
+    seen.add(candidate.key);
+    images.push(candidate.url);
   };
   (incoming || []).forEach(add);
-  add(row.image_url);
   for (let index = 1; index <= 10; index += 1) add(row[`image_url_${index}`]);
-  return images.slice(0, maximum);
+  return { images: images.slice(0, maximum), primaryUrl: primary?.url || "" };
 };
 
 const collectCurrent = async () => {
@@ -150,7 +186,11 @@ const collectCurrent = async () => {
     }
 
     const maximum = Math.min(10, Math.max(1, Number(state.maxImages) || 5));
-    const images = mergeImages(row, result.images, maximum);
+    const merged = mergeImages(row, result.images, maximum, source);
+    const images = merged.images;
+    row.image_url = merged.primaryUrl;
+    // Remove stale values from a previous run before writing the clean gallery.
+    for (let index = 1; index <= 10; index += 1) row[`image_url_${index}`] = "";
     for (let index = 1; index <= maximum; index += 1) row[`image_url_${index}`] = images[index - 1] || "";
     row.image_gallery_count = images.length;
     row.image_gallery_status = images.length >= maximum ? "complete" : images.length ? "partial" : "no_images";

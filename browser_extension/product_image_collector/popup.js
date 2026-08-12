@@ -111,13 +111,13 @@ const loadRows = async ({ sourceName, headers, rows, message }) => {
   const previous = await getState();
   if (previous?.running) throw new Error("Hãy dừng phiên đang chạy trước khi nạp danh sách mới.");
   const preparedRows = rows.map((row) => rowUrl(row, headers)
-    ? row
+    ? { ...row, image_gallery_count: 0, image_gallery_status: "" }
     : { ...row, image_gallery_count: 0, image_gallery_status: "missing_url" });
   const validCount = preparedRows.filter((row) => rowUrl(row, headers)).length;
   if (!validCount) throw new Error("Không tìm thấy link Amazon/Temu hoặc ASIN hợp lệ.");
   await chrome.storage.local.set({
     [STATE_KEY]: {
-      version: 2,
+      version: 3,
       sourceName,
       headers,
       rows: preparedRows,

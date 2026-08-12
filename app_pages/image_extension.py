@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import streamlit as st
@@ -9,10 +10,14 @@ from amazon_extension_import import build_extension_zip
 
 APP_DIR = Path(__file__).resolve().parents[1]
 EXTENSION_DIR = APP_DIR / "browser_extension" / "product_image_collector"
+EXTENSION_VERSION = json.loads(
+    (EXTENSION_DIR / "manifest.json").read_text(encoding="utf-8")
+)["version"]
 
 
 @st.cache_data(show_spinner=False)
-def _extension_package() -> bytes:
+def _extension_package(version: str) -> bytes:
+    del version  # Cache key changes whenever the manifest version changes.
     return build_extension_zip(EXTENSION_DIR)
 
 
@@ -36,9 +41,9 @@ with st.container(border=True):
     )
     try:
         st.download_button(
-            "Tải Product Image Collector 1.1.1",
-            data=_extension_package(),
-            file_name="rinboss_product_image_collector_v1.1.1.zip",
+            f"Tải Product Image Collector {EXTENSION_VERSION}",
+            data=_extension_package(EXTENSION_VERSION),
+            file_name=f"rinboss_product_image_collector_v{EXTENSION_VERSION}.zip",
             mime="application/zip",
             icon=":material/download:",
             key="download_product_image_collector",
