@@ -4,6 +4,8 @@ const STATE_KEY = "rinbossImageCollectorState";
 const COLLECT_ALARM = "rinbossImageCollectorCollect";
 const NEXT_ALARM = "rinbossImageCollectorNext";
 const LOAD_TIMEOUT_ALARM = "rinbossImageCollectorLoadTimeout";
+const BATCH_SIZE = 100;
+const BATCH_PAUSE_SECONDS = 60;
 const URL_ALIASES = ["product url", "amazon url", "temu url", "product link", "url", "link"];
 
 const normalizeHeader = (value) => String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -158,6 +160,23 @@ const mergeImages = (row, incoming, maximum, source) => {
   return { images: images.slice(0, maximum), primaryUrl: primary?.url || "" };
 };
 
+const scheduleNext = async (state) => {
+  const atBatchBoundary = Number(state?.processed || 0) > 0
+    && Number(state.processed) % BATCH_SIZE === 0;
+  const delaySeconds = atBatchBoundary
+    ? BATCH_PAUSE_SECONDS
+    : Math.min(120, Math.max(5, Number(state?.delaySeconds) || 8));
+
+  if (atBatchBoundary) {
+    state = await saveState({
+      status: "batch_pause",
+      message: `Đã xử lý ${state.processed}/${state.total} sản phẩm. Tự nghỉ ${BATCH_PAUSE_SECONDS} giây trước nhóm tiếp theo.`,
+    });
+  }
+  chrome.alarms.create(NEXT_ALARM, { when: Date.now() + delaySeconds * 1000 });
+  return state;
+};
+
 const collectCurrent = async () => {
   let state = await getState();
   if (!state?.running || !state.tabId) return;
@@ -210,7 +229,7 @@ const collectCurrent = async () => {
       await finish("completed", `Hoàn tất ${state.processed}/${state.total} sản phẩm.`);
       return;
     }
-    chrome.alarms.create(NEXT_ALARM, { when: Date.now() + state.delaySeconds * 1000 });
+    await scheduleNext(state);
   } catch (error) {
     state = await getState();
     const rows = [...(state?.rows || [])];
@@ -224,7 +243,7 @@ const collectCurrent = async () => {
     });
     if (state.stopRequested) await finish("stopped", `Đã dừng sau ${state.processed}/${state.total} sản phẩm; dòng cuối có lỗi.`);
     else if (state.queuePosition >= state.queue.length) await finish("completed", `Đã xử lý ${state.processed}/${state.total}; có dòng lỗi.`);
-    else chrome.alarms.create(NEXT_ALARM, { when: Date.now() + state.delaySeconds * 1000 });
+    else await scheduleNext(state);
   }
 };
 

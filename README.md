@@ -216,11 +216,11 @@ size, pack, thương hiệu, quyền bán và toàn bộ chi phí. Mã nguồn n
 
 ### Product Image Collector
 
-Trang `/image-extension` cung cấp extension riêng để dán trực tiếp tối đa 100 link hoặc nhập CSV Amazon/Temu, mở từng
+Trang `/image-extension` cung cấp extension riêng để dán trực tiếp số link không giới hạn hoặc nhập CSV Amazon/Temu, mở từng
 trang sản phẩm bằng trình duyệt của người dùng và bổ sung từ 1–10 ảnh gallery. CSV
 kết quả giữ nguyên cột cũ và thêm `image_url_1...`, `image_gallery_count`,
-`image_gallery_status`. Extension dừng khi gặp CAPTCHA và hỗ trợ dừng sau sản phẩm
-hiện tại. Mã nguồn nằm trong `browser_extension/product_image_collector/`.
+`image_gallery_status`. Extension tự nghỉ 60 giây sau mỗi 100 sản phẩm, dừng khi gặp
+CAPTCHA và hỗ trợ dừng sau sản phẩm hiện tại. Mã nguồn nằm trong `browser_extension/product_image_collector/`.
 
 ### Tải ảnh theo tên
 

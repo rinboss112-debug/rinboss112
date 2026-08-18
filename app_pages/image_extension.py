@@ -55,7 +55,7 @@ steps = st.columns(3)
 with steps[0].container(border=True, height="stretch"):
     st.subheader("1. Dán link hoặc nhập CSV", anchor=False)
     st.markdown(
-        "Có thể dán trực tiếp tối đa 100 link, mỗi dòng một link. Hoặc nhập CSV có cột "
+        "Có thể dán trực tiếp số link không giới hạn, mỗi dòng một link. Hoặc nhập CSV có cột "
         "`product_url`, `amazon_url`, `temu_url`, `url`, `link`; Amazon cũng nhận cột `asin`."
     )
 with steps[1].container(border=True, height="stretch"):
@@ -89,7 +89,7 @@ with st.container(border=True):
     )
 
 st.warning(
-    "Khi chạy danh sách lớn, nên để nghỉ 10–15 giây giữa sản phẩm. Extension không vượt CAPTCHA, không đổi IP "
+    "Extension tự nghỉ 60 giây sau mỗi 100 sản phẩm. Extension không vượt CAPTCHA, không đổi IP "
     "và sẽ tự dừng khi website yêu cầu xác minh.",
     icon=":material/warning:",
 )
