@@ -196,7 +196,7 @@ Ghi chú trong tool là ghi chú nội bộ, không sửa dữ liệu ghi chú t
 
 ## Hai Chrome Extension độc lập
 
-- `/amazon-extension`: tải **RinBoss Amazon Collector 1.2** hiện có, chỉ dùng cho Amazon.
+- `/amazon-extension`: tải **RinBoss Amazon Collector 1.2.1** hiện có, chỉ dùng cho Amazon.
 - `/marketplace-extension`: tải **RinBoss Marketplace Collector 2.0**, extension riêng để
   thu thập Temu US và Amazon thành hai kho so sánh. Có thể cài song song, không ghi đè nhau.
 

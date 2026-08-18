@@ -1,4 +1,4 @@
-# RinBoss Amazon Collector 1.2
+# RinBoss Amazon Collector 1.2.1
 
 Chrome Extension Manifest V3 đọc các thẻ sản phẩm đang hiển thị trên trang kết quả
 Amazon. Phiên hàng loạt chạy trong tab Amazon do người dùng chọn và vẫn tiếp tục khi
@@ -33,6 +33,8 @@ popup extension đóng.
 Extension tự bỏ dòng trống, gộp ngách trùng, chỉ chạy 50 ngách đầu và gộp sản phẩm
 theo ASIN. Nếu một trang không còn thẻ kết quả, extension chuyển sang ngách tiếp theo.
 Bộ lọc giá không xóa sản phẩm đã lưu nên có thể đổi khoảng giá và xuất lại nhiều lần.
+Tiêu đề được lấy từ liên kết sản phẩm khớp ASIN; khi Amazon đặt brand ở dòng đầu,
+extension ưu tiên dòng mô tả sản phẩm thay vì ghi nhầm brand vào cột `title`.
 
 ## Quyền sử dụng
 

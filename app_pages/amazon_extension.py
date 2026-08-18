@@ -44,7 +44,7 @@ with st.container(border=True):
         st.download_button(
             "Tải RinBoss Amazon Collector",
             data=_extension_package(),
-            file_name="rinboss_amazon_collector_v1.2.0.zip",
+            file_name="rinboss_amazon_collector_v1.2.1.zip",
             mime="application/zip",
             icon=":material/download:",
             key="download_amazon_extension",

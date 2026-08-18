@@ -99,7 +99,7 @@ class MarketplaceGapTests(unittest.TestCase):
         market_dir = project / "browser_extension" / "marketplace_collector"
         amazon_manifest = json.loads((amazon_dir / "manifest.json").read_text(encoding="utf-8"))
         market_manifest = json.loads((market_dir / "manifest.json").read_text(encoding="utf-8"))
-        self.assertEqual(amazon_manifest["version"], "1.2.0")
+        self.assertEqual(amazon_manifest["version"], "1.2.1")
         self.assertEqual(market_manifest["version"], "2.0.1")
         self.assertNotEqual(amazon_manifest["name"], market_manifest["name"])
         self.assertIn("https://www.temu.com/*", market_manifest["host_permissions"])

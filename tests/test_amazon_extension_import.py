@@ -81,7 +81,7 @@ class AmazonExtensionImportTests(unittest.TestCase):
         project_dir = Path(__file__).resolve().parents[1]
         extension_dir = project_dir / "browser_extension" / "amazon_product_collector"
         manifest = json.loads((extension_dir / "manifest.json").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["version"], "1.2.0")
+        self.assertEqual(manifest["version"], "1.2.1")
         self.assertEqual(manifest["background"]["service_worker"], "background.js")
         self.assertIn("alarms", manifest["permissions"])
         self.assertIn("unlimitedStorage", manifest["permissions"])
@@ -97,10 +97,14 @@ class AmazonExtensionImportTests(unittest.TestCase):
 
         popup_html = (extension_dir / "popup.html").read_text(encoding="utf-8")
         popup_js = (extension_dir / "popup.js").read_text(encoding="utf-8")
+        content_js = (extension_dir / "content.js").read_text(encoding="utf-8")
         self.assertIn('id="filter-min-price"', popup_html)
         self.assertIn('id="filter-max-price"', popup_html)
         self.assertIn('id="export-all-csv"', popup_html)
         self.assertIn("filteredProducts", popup_js)
+        self.assertIn("titleFromCard(card, asin)", content_js)
+        self.assertIn('card.querySelectorAll("a[href]")', content_js)
+        self.assertIn("spanTexts.sort", content_js)
 
 
 if __name__ == "__main__":

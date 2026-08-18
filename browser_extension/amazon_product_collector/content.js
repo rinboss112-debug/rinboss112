@@ -134,16 +134,66 @@
     ].some((prefix) => value.startsWith(prefix));
   };
 
-  const titleFromCard = (card) => firstText(card, [
-    "h2 a span",
-    "h2 span",
-    "[data-cy='title-recipe'] h2 span",
-    "a.a-link-normal.s-line-clamp-2 span",
-  ]);
+  const titleTextFromScope = (scope) => {
+    if (!scope) return "";
+    const isNoise = (value) => /^(?:sponsored|best seller|overall pick|amazon'?s choice)$/i.test(value);
+    const fullText = normalize(scope.textContent);
+    const spanTexts = Array.from(scope.querySelectorAll("span"))
+      .map((node) => normalize(node.textContent))
+      .filter((value) => value && !isNoise(value));
+
+    // The current Amazon card can place the brand in the first h2 span and
+    // the real product title in a second span. Prefer the descriptive span
+    // instead of blindly accepting the first one.
+    if (spanTexts.length > 1) {
+      return spanTexts.sort((left, right) => right.length - left.length)[0];
+    }
+    if (spanTexts.length === 1) {
+      const onlySpan = spanTexts[0];
+      if (fullText.length > onlySpan.length && fullText.startsWith(onlySpan)) {
+        const remainder = normalize(fullText.slice(onlySpan.length));
+        if (remainder.length > onlySpan.length) return remainder;
+      }
+      return onlySpan;
+    }
+
+    const ariaLabel = normalize(scope.getAttribute("aria-label"));
+    if (ariaLabel && !isNoise(ariaLabel)) return ariaLabel;
+    return isNoise(fullText) ? "" : fullText;
+  };
+
+  const titleFromCard = (card, asin) => {
+    const asinPattern = new RegExp(`/(?:dp|gp/product)/${asin}(?:[/?]|$)`, "i");
+    const productLinks = Array.from(card.querySelectorAll("a[href]")).filter((anchor) => {
+      let href = anchor.getAttribute("href") || "";
+      try {
+        href = decodeURIComponent(href);
+      } catch (_error) {
+        // Use the original href when Amazon returns malformed escaping.
+      }
+      return asinPattern.test(href);
+    });
+    const productLink = productLinks.find((anchor) =>
+      anchor.querySelector("h2") || anchor.closest("h2") || anchor.closest("[data-cy='title-recipe']")
+    ) || productLinks.find((anchor) => normalize(anchor.textContent).length >= 12);
+    const exactScope = productLink?.querySelector("h2") || productLink?.closest("h2") || productLink;
+    const exactTitle = titleTextFromScope(exactScope);
+    if (exactTitle) return exactTitle;
+
+    for (const selector of [
+      "[data-cy='title-recipe'] h2",
+      "h2",
+      "a.a-link-normal.s-line-clamp-2",
+    ]) {
+      const title = titleTextFromScope(card.querySelector(selector));
+      if (title) return title;
+    }
+    return normalize(card.querySelector("img.s-image")?.getAttribute("alt"));
+  };
 
   const collectCard = (card, keyword) => {
     const asin = normalize(card.getAttribute("data-asin")).toUpperCase();
-    const title = titleFromCard(card);
+    const title = titleFromCard(card, asin);
     if (!/^[A-Z0-9]{10}$/.test(asin) || !title) return null;
     const delivery = shippingText(card);
     const lowerDelivery = delivery.toLowerCase();
