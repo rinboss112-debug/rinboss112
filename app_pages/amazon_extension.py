@@ -44,7 +44,7 @@ with st.container(border=True):
         st.download_button(
             "Tải RinBoss Amazon Collector",
             data=_extension_package(),
-            file_name="rinboss_amazon_collector_v1.2.1.zip",
+            file_name="rinboss_amazon_collector_v1.3.0.zip",
             mime="application/zip",
             icon=":material/download:",
             key="download_amazon_extension",
@@ -60,6 +60,10 @@ with st.container(border=True):
         "3. Bấm **Nhập TXT**, chọn số trang cho mỗi ngách và thời gian nghỉ.\n"
         "4. Bấm **Bắt đầu cào danh sách**; extension tự tìm lần lượt và gộp trùng theo ASIN.\n"
         "5. Có thể bấm **Dừng sau trang hiện tại**. Khi hoàn tất, lọc giá/tiêu đề/giao hàng rồi tải **CSV đã lọc** hoặc **CSV toàn bộ**."
+    )
+    st.info(
+        "Amazon Collector 1.3.0 có bộ lọc từ khóa cảnh báo sản phẩm dễ cần hồ sơ Temu US. Bộ lọc chỉ hỗ trợ sàng lọc; hãy kiểm tra yêu cầu category trong Seller Center trước khi đăng.",
+        icon=":material/policy:",
     )
     st.warning(
         "Extension tự dừng khi thấy CAPTCHA/Robot Check và không có chức năng vượt chặn. Không nên giảm thời gian nghỉ hoặc chạy danh sách quá lớn.",

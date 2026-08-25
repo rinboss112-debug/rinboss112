@@ -1,4 +1,4 @@
-# RinBoss Amazon Collector 1.2.1
+# RinBoss Amazon Collector 1.3.0
 
 Chrome Extension Manifest V3 đọc các thẻ sản phẩm đang hiển thị trên trang kết quả
 Amazon. Phiên hàng loạt chạy trong tab Amazon do người dùng chọn và vẫn tiếp tục khi
@@ -35,6 +35,11 @@ theo ASIN. Nếu một trang không còn thẻ kết quả, extension chuyển s
 Bộ lọc giá không xóa sản phẩm đã lưu nên có thể đổi khoảng giá và xuất lại nhiều lần.
 Tiêu đề được lấy từ liên kết sản phẩm khớp ASIN; khi Amazon đặt brand ở dòng đầu,
 extension ưu tiên dòng mô tả sản phẩm thay vì ghi nhầm brand vào cột `title`.
+
+Phần lọc CSV có thêm bộ lọc cảnh báo giấy tờ Temu US. Khi bật, `CSV đã lọc` bỏ
+các tiêu đề khớp danh sách từ khóa rủi ro do người dùng chỉnh sửa; `CSV toàn bộ`
+và dữ liệu gốc vẫn được giữ. Đây chỉ là bước sàng lọc theo từ khóa, không phải xác
+nhận sản phẩm chắc chắn được Temu chấp thuận.
 
 ## Quyền sử dụng
 

@@ -97,7 +97,17 @@
             <option value="not-fresh">Không có Fresh</option>
           </select>
         </label>
-        <p class="hint">Bộ lọc chỉ áp dụng cho nút “CSV đã lọc”, không xóa dữ liệu gốc.</p>
+        <label class="check-row compliance-toggle">
+          <input id="filter-temu-risk" type="checkbox" checked>
+          <span>Loại sản phẩm có nguy cơ cần giấy tờ Temu US</span>
+        </label>
+        <details class="compliance-details">
+          <summary>Chỉnh danh sách từ khóa rủi ro</summary>
+          <textarea id="filter-temu-risk-terms" rows="7" aria-label="Từ khóa rủi ro Temu US"></textarea>
+          <p class="hint">Mỗi dòng một từ/cụm từ; tool so với tiêu đề và tên ngách. Có thể chỉnh theo category của shop.</p>
+        </details>
+        <p id="temu-risk-count" class="risk-count">0 sản phẩm được cảnh báo giấy tờ.</p>
+        <p class="hint">Chỉ áp dụng cho “CSV đã lọc”; CSV toàn bộ và dữ liệu gốc không bị xóa.</p>
       </section>
 
       <p id="status" class="status" role="status">Mở amazon.com trong tab này trước khi bắt đầu.</p>
@@ -113,6 +123,7 @@
         Extension chỉ đọc nội dung sản phẩm đang hiển thị. Gặp CAPTCHA/Robot Check, phiên sẽ tự dừng.
       </footer>
     </main>
+    <script src="compliance.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

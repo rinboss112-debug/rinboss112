@@ -3,6 +3,7 @@
 const STORAGE_KEY = "rinbossAmazonProducts";
 const SETTINGS_KEY = "rinbossAmazonSettings";
 const BATCH_KEY = "rinbossAmazonBatch";
+const TEMU_COMPLIANCE = globalThis.RinBossTemuCompliance;
 const CSV_COLUMNS = [
   "title", "image_url", "price", "variants", "delivery_options", "keyword",
   "asin", "product_url", "currency", "rating", "review_count", "prime",
@@ -35,6 +36,9 @@ const elements = {
   filterMinPrice: document.querySelector("#filter-min-price"),
   filterMaxPrice: document.querySelector("#filter-max-price"),
   filterShipping: document.querySelector("#filter-shipping"),
+  filterTemuRisk: document.querySelector("#filter-temu-risk"),
+  filterTemuRiskTerms: document.querySelector("#filter-temu-risk-terms"),
+  temuRiskCount: document.querySelector("#temu-risk-count"),
   filteredCount: document.querySelector("#filtered-count"),
 };
 
@@ -63,11 +67,18 @@ const getStored = async () => {
   };
 };
 
+const productRiskMatches = (product, terms) => TEMU_COMPLIANCE.matchedRiskTerms(
+  `${product.title || ""} ${product.keyword || ""}`,
+  terms,
+);
+
 const filteredProducts = (products = cachedProducts) => {
   const query = elements.filterQuery.value.trim().toLocaleLowerCase();
   const minimum = Math.max(0, Number(elements.filterMinPrice.value) || 0);
   const maximum = Math.max(0, Number(elements.filterMaxPrice.value) || 0);
   const shipping = elements.filterShipping.value;
+  const riskTerms = TEMU_COMPLIANCE.normalizeRiskTerms(elements.filterTemuRiskTerms.value);
+  const excludeTemuRisk = elements.filterTemuRisk.checked;
   return products.filter((product) => {
     const haystack = `${product.title || ""} ${product.keyword || ""} ${product.asin || ""}`.toLocaleLowerCase();
     if (query && !haystack.includes(query)) return false;
@@ -78,13 +89,19 @@ const filteredProducts = (products = cachedProducts) => {
     if (shipping === "free" && !product.free_shipping) return false;
     if (shipping === "fast" && !product.fast_shipping) return false;
     if (shipping === "not-fresh" && /fresh/i.test(String(product.delivery_options || ""))) return false;
+    if (excludeTemuRisk && productRiskMatches(product, riskTerms).length) return false;
     return true;
   });
 };
 
 const renderFilterCount = () => {
+  const riskTerms = TEMU_COMPLIANCE.normalizeRiskTerms(elements.filterTemuRiskTerms.value);
+  const riskCount = cachedProducts.filter((product) =>
+    productRiskMatches(product, riskTerms).length
+  ).length;
   const count = filteredProducts().length;
   elements.filteredCount.textContent = `${count}/${cachedProducts.length} phù hợp`;
+  elements.temuRiskCount.textContent = `${riskCount} sản phẩm được cảnh báo giấy tờ.`;
   elements.exportCsv.disabled = count === 0;
 };
 
@@ -123,6 +140,14 @@ const refresh = async () => {
   elements.excludeBrands.checked = settings.excludeBrands !== false;
   elements.pages.value = String(settings.pagesPerKeyword || elements.pages.value || 2);
   elements.delay.value = String(settings.delaySeconds || elements.delay.value || 10);
+  elements.filterTemuRisk.checked = settings.excludeTemuComplianceRisk !== false;
+  if (!elements.filterTemuRiskTerms.dataset.ready) {
+    const terms = Array.isArray(settings.temuComplianceRiskTerms)
+      ? settings.temuComplianceRiskTerms
+      : TEMU_COMPLIANCE.DEFAULT_RISK_TERMS;
+    elements.filterTemuRiskTerms.value = terms.join("\n");
+    elements.filterTemuRiskTerms.dataset.ready = "true";
+  }
   const disabled = products.length === 0;
   elements.exportAllCsv.disabled = disabled;
   elements.exportJson.disabled = disabled;
@@ -153,6 +178,23 @@ elements.keywords.addEventListener("input", updateKeywordCount);
   element.addEventListener("input", renderFilterCount);
 });
 elements.filterShipping.addEventListener("change", renderFilterCount);
+elements.filterTemuRisk.addEventListener("change", async () => {
+  renderFilterCount();
+  const { settings } = await getStored();
+  await chrome.storage.local.set({
+    [SETTINGS_KEY]: { ...settings, excludeTemuComplianceRisk: elements.filterTemuRisk.checked },
+  });
+});
+elements.filterTemuRiskTerms.addEventListener("input", renderFilterCount);
+elements.filterTemuRiskTerms.addEventListener("change", async () => {
+  const terms = TEMU_COMPLIANCE.normalizeRiskTerms(elements.filterTemuRiskTerms.value);
+  elements.filterTemuRiskTerms.value = terms.join("\n");
+  const { settings } = await getStored();
+  await chrome.storage.local.set({
+    [SETTINGS_KEY]: { ...settings, temuComplianceRiskTerms: terms },
+  });
+  renderFilterCount();
+});
 elements.txtFile.addEventListener("change", async () => {
   const file = elements.txtFile.files?.[0];
   if (!file) return;

@@ -200,7 +200,7 @@ Khi sửa cơ chế lưu:
 
 Ba extension là các sản phẩm độc lập và có manifest riêng:
 
-- `browser_extension/amazon_product_collector/`: nhập TXT nhiều ngách, tìm kiếm Amazon, lọc giá và xuất CSV.
+- `browser_extension/amazon_product_collector/`: nhập TXT nhiều ngách, tìm kiếm Amazon, lọc giá/giao hàng/rủi ro giấy tờ Temu US và xuất CSV.
 - `browser_extension/marketplace_collector/`: thu thập Temu US và Amazon để so sánh giá.
 - `browser_extension/product_image_collector/`: dán trực tiếp số link không giới hạn hoặc nhập CSV, mở tuần tự link sản phẩm, tự nghỉ 60 giây sau mỗi 100 sản phẩm và bổ sung `image_url_1...image_url_10`.
 
