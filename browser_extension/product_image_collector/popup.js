@@ -1,6 +1,8 @@
 "use strict";
 
 const STATE_KEY = "rinbossImageCollectorState";
+const MIN_DELAY_SECONDS = 1;
+const MAX_DELAY_SECONDS = 120;
 const URL_ALIASES = ["product url", "amazon url", "temu url", "product link", "url", "link"];
 const el = Object.fromEntries([
   "csv-file", "file-name", "direct-links", "load-links", "row-count", "valid-count", "done-count", "max-images",
@@ -97,6 +99,10 @@ const parseDirectLinks = (text) => {
 
 const csvValue = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
 const timestamp = () => new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+const normalizeDelaySeconds = (value) => Math.min(
+  MAX_DELAY_SECONDS,
+  Math.max(MIN_DELAY_SECONDS, Number(value) || 8),
+);
 const setStatus = (message, kind = "") => {
   el.status.textContent = message;
   el.status.className = `status ${kind}`.trim();
@@ -123,7 +129,7 @@ const loadRows = async ({ sourceName, headers, rows, message }) => {
       processed: 0,
       total: validCount,
       maxImages: Math.min(10, Math.max(1, Number(el.maxImages.value) || 5)),
-      delaySeconds: Math.min(120, Math.max(5, Number(el.delaySeconds.value) || 8)),
+      delaySeconds: normalizeDelaySeconds(el.delaySeconds.value),
       message: message || `Đã nạp ${rows.length} dòng; có ${validCount} link hợp lệ.`,
     },
   });
@@ -205,7 +211,7 @@ el.start.addEventListener("click", async () => {
     const response = await chrome.runtime.sendMessage({
       type: "START_IMAGE_BATCH",
       maxImages: Math.min(10, Math.max(1, Number(el.maxImages.value) || 5)),
-      delaySeconds: Math.min(120, Math.max(5, Number(el.delaySeconds.value) || 8)),
+      delaySeconds: normalizeDelaySeconds(el.delaySeconds.value),
     });
     if (!response?.ok) throw new Error(response?.message || "Không bắt đầu được.");
     await render();

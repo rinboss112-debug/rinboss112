@@ -6,10 +6,16 @@ const NEXT_ALARM = "rinbossImageCollectorNext";
 const LOAD_TIMEOUT_ALARM = "rinbossImageCollectorLoadTimeout";
 const BATCH_SIZE = 100;
 const BATCH_PAUSE_SECONDS = 60;
+const MIN_DELAY_SECONDS = 1;
+const MAX_DELAY_SECONDS = 120;
 const URL_ALIASES = ["product url", "amazon url", "temu url", "product link", "url", "link"];
 
 const normalizeHeader = (value) => String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 const now = () => new Date().toISOString();
+const normalizeDelaySeconds = (value) => Math.min(
+  MAX_DELAY_SECONDS,
+  Math.max(MIN_DELAY_SECONDS, Number(value) || 8),
+);
 const getState = async () => (await chrome.storage.local.get(STATE_KEY))[STATE_KEY] || null;
 const saveState = async (changes) => {
   const current = await getState() || {};
@@ -165,7 +171,7 @@ const scheduleNext = async (state) => {
     && Number(state.processed) % BATCH_SIZE === 0;
   const delaySeconds = atBatchBoundary
     ? BATCH_PAUSE_SECONDS
-    : Math.min(120, Math.max(5, Number(state?.delaySeconds) || 8));
+    : normalizeDelaySeconds(state?.delaySeconds);
 
   if (atBatchBoundary) {
     state = await saveState({
@@ -265,7 +271,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         processed: 0,
         total: queue.length,
         maxImages: maximum,
-        delaySeconds: Math.min(120, Math.max(5, Number(message.delaySeconds) || 8)),
+        delaySeconds: normalizeDelaySeconds(message.delaySeconds),
         message: `Chuẩn bị xử lý ${queue.length} sản phẩm…`,
         startedAt: now(),
       });

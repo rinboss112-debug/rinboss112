@@ -1,4 +1,4 @@
-# RinBoss Product Image Collector 1.1.4
+# RinBoss Product Image Collector 1.1.5
 
 Extension riêng để bổ sung ảnh gallery cho CSV Amazon hoặc Temu bằng trình duyệt của người dùng.
 
@@ -8,7 +8,7 @@ Extension riêng để bổ sung ảnh gallery cho CSV Amazon hoặc Temu bằng
 2. Mở extension và chọn một trong hai cách nhập:
    - dán trực tiếp danh sách link sản phẩm không giới hạn, mỗi dòng một link, rồi bấm **Nạp danh sách link**; hoặc
    - chọn CSV có một trong các cột `product_url`, `amazon_url`, `temu_url`, `url`, `link`; CSV Amazon cũng có thể chỉ cần cột `asin`.
-3. Chọn số ảnh (mặc định 5), thời gian nghỉ rồi bấm **Bắt đầu lấy ảnh**. Extension tự nghỉ 60 giây sau mỗi 100 sản phẩm trước khi chạy nhóm tiếp theo.
+3. Chọn số ảnh (mặc định 5), thời gian nghỉ từ 1–120 giây rồi bấm **Bắt đầu lấy ảnh**. Extension tự nghỉ 60 giây sau mỗi 100 sản phẩm trước khi chạy nhóm tiếp theo.
 4. Extension mở một tab nền và lần lượt đọc từng trang sản phẩm. Có thể đóng popup; tiến trình vẫn tiếp tục.
 5. Khi hoàn tất, bấm **Tải CSV có ảnh**. File giữ nguyên cột cũ và thêm `image_url_1...`, `image_gallery_count`, `image_gallery_status`.
 

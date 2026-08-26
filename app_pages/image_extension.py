@@ -61,7 +61,7 @@ with steps[0].container(border=True, height="stretch"):
 with steps[1].container(border=True, height="stretch"):
     st.subheader("2. Lấy gallery", anchor=False)
     st.markdown(
-        "Chọn từ 1–10 ảnh và thời gian nghỉ. Extension mở một tab nền, xử lý lần lượt "
+        "Chọn từ 1–10 ảnh và thời gian nghỉ từ 1–120 giây. Extension mở một tab nền, xử lý lần lượt "
         "và cho phép dừng sau sản phẩm hiện tại."
     )
 with steps[2].container(border=True, height="stretch"):
