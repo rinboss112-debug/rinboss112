@@ -88,6 +88,7 @@ Streamlit chạy lại script khi widget thay đổi. `app.py` là entry point d
 | `amazon_extension_import.py` | Đọc CSV do Amazon Collector xuất. |
 | `amazon_image_enricher.py` | Lấy tối đa 5 ảnh gallery từ trang chi tiết Amazon bằng request phía server. |
 | `image_batch_downloader.py` | Tải ảnh công khai theo tên, kiểm tra định dạng/an toàn URL và tạo ZIP kèm báo cáo. |
+| `google_sheet_search.py` | OAuth Google Sheets chỉ-read, lấy metadata/tất cả tab, index exact title trong RAM và trả cột A–D. |
 | `notifications.py` | Thông báo hoàn tất qua Telegram/email. |
 | `browser_extension/` | Ba Chrome extension độc lập: Amazon Collector, Marketplace Collector và Product Image Collector. |
 | `tests/` | Unit test và Streamlit AppTest cho các luồng chính. |
@@ -101,6 +102,7 @@ Streamlit chạy lại script khi widget thay đổi. `app.py` là entry point d
 | `/marketplace-extension` | Tải Marketplace Collector | Công khai trong menu |
 | `/image-extension` | Tải Product Image Collector | Công khai trong menu |
 | `/download-images` | Dán/upload tên và link ảnh, tạo ZIP | Admin |
+| `/google-sheet-search` | Load tất cả tab và exact-search Product Title trong RAM | Admin |
 | `/tiktok-shop-us` | Chuẩn bị và xuất XLSX TikTok Shop US | Admin |
 | `/amazon-images` | Bổ sung gallery ảnh Amazon từ CSV | Admin |
 | `/temu-hot-products` | Tạo link ngách và phân tích dữ liệu Temu | Admin |
@@ -249,7 +251,7 @@ Các section được hỗ trợ:
 ```toml
 [app]          # mật khẩu app cũ/tùy chọn
 [admin]        # mật khẩu admin + enable_access_control
-[google_drive] # OAuth client_id/client_secret/refresh_token
+[google_drive] # OAuth client_id/client_secret/refresh_token; gồm drive.file + spreadsheets.readonly
 [temu]         # app_key/app_secret/access_token/endpoint/timezone
 [telegram]     # bot_token/chat_id
 [email]        # SMTP

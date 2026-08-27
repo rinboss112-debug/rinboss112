@@ -104,6 +104,12 @@ image_downloader_page = st.Page(
     icon=":material/download_for_offline:",
     url_path="download-images",
 )
+google_sheet_search_page = st.Page(
+    "app_pages/google_sheet_search.py",
+    title="Tìm Google Sheets",
+    icon=":material/table_view:",
+    url_path="google-sheet-search",
+)
 temu_hot_products_page = st.Page(
     "app_pages/temu_hot_products.py",
     title="Sản phẩm hot Temu",
@@ -153,6 +159,7 @@ navigation_pages: dict[str, list[Any]] = {
         marketplace_extension_page,
         image_extension_page,
         image_downloader_page,
+        google_sheet_search_page,
         tiktok_export_page,
         amazon_images_page,
         temu_hot_products_page,

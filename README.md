@@ -48,6 +48,9 @@ Web app Streamlit tiếng Việt để chạy tuần tự nhiều ngách Amazon,
 - Đồng bộ chính sách truy cập dạng băm lên Google Drive; không lưu mã người dùng dạng rõ.
 - Thông báo hoàn tất qua Telegram và email tùy chọn.
 - Kiểm tra kết nối Amazon và Google Drive ngay trên sidebar.
+- Trang `/google-sheet-search` dành cho admin: nhập Google Sheet URL/ID, lấy danh
+  sách toàn bộ tab, load dữ liệu một lần vào RAM và exact-search Product Title
+  trên mọi tab mà không gọi lại API ở mỗi lần tìm.
 - Nếu CSV bị Excel khóa, tự chuyển sang tên timestamp.
 - Trang /tiktok-shop-us dành cho admin để chuẩn bị sản phẩm và xuất Excel TikTok Shop US.
 - Tự tính giá bán theo công thức (giá gốc × 2 + 12) ÷ 0.8, đồng thời cho phép sửa giá cuối cùng.
@@ -82,12 +85,13 @@ App sử dụng OAuth của chính tài khoản Google, không dùng service acc
 2. Tạo hoặc chọn một project.
 3. Vào **APIs & Services → Library**.
 4. Tìm **Google Drive API** và nhấn **Enable**.
-5. Vào **Google Auth Platform → Branding/Audience** và cấu hình OAuth consent screen.
-6. Nếu app ở chế độ Testing, thêm địa chỉ Gmail của bạn vào **Test users**.
-7. Vào **APIs & Services → Credentials**.
-8. Chọn **Create credentials → OAuth client ID**.
-9. Chọn loại **Desktop app**.
-10. Tải file JSON và đổi tên thành `client_secret.json` trong thư mục project.
+5. Tìm **Google Sheets API** và nhấn **Enable**.
+6. Vào **Google Auth Platform → Branding/Audience** và cấu hình OAuth consent screen.
+7. Nếu app ở chế độ Testing, thêm địa chỉ Gmail của bạn vào **Test users**.
+8. Vào **APIs & Services → Credentials**.
+9. Chọn **Create credentials → OAuth client ID**.
+10. Chọn loại **Desktop app**.
+11. Tải file JSON và đổi tên thành `client_secret.json` trong thư mục project.
 
 Không commit `client_secret.json` lên GitHub; file này đã được chặn trong `.gitignore`.
 
@@ -107,6 +111,10 @@ drive_secrets.toml
 
 File này chứa khóa bí mật và cũng đã được chặn trong `.gitignore`.
 
+Script yêu cầu hai scope: `drive.file` để lưu kết quả scraper và
+`spreadsheets.readonly` để đọc file Google Sheets. Nếu refresh token cũ được tạo
+trước khi có trang tìm Sheets, hãy chạy lại script và cập nhật Secrets.
+
 ### 3. Thêm vào Streamlit Community Cloud
 
 1. Mở app tại `share.streamlit.io`.
@@ -124,6 +132,30 @@ password = "MAT_KHAU_CUA_BAN"
 Sau khi app chạy lại, sidebar sẽ hiện **Google Drive đã cấu hình**. Nhấn **Kiểm tra Google Drive**; app tự tạo thư mục `Amazon Product Scraper` trong My Drive.
 
 Nếu Google báo `invalid_grant`, refresh token đã hết hiệu lực hoặc bị thu hồi; chạy lại `setup_google_drive.py` và cập nhật Secrets.
+
+## Phase 1: tìm Product Title trong Google Sheets
+
+Mở `/google-sheet-search` và đăng nhập admin. Trang này chỉ đọc dữ liệu:
+
+1. Dán Google Sheet URL hoặc Sheet ID rồi nhấn **CONNECT SHEET**.
+2. Kiểm tra danh sách tab được phát hiện.
+3. Nhấn **LOAD ALL SHEETS**. Dữ liệu được giữ trong RAM của phiên trình duyệt;
+   tab trống hoặc tab lỗi được bỏ qua và ghi log.
+4. Nhập Product Title rồi nhấn **SEARCH TITLE**. Mỗi lần tìm sau đó chỉ tra dữ
+   liệu trong RAM, không gọi lại Google Sheets API.
+5. Kết quả trả về theo đúng dạng `Sheet Name | Row Number | Column A | Column B |
+   Column C | Column D`; nếu không có kết quả sẽ hiện `NOT FOUND`.
+
+Quy tắc tìm: exact match trên mọi ô, không phân biệt hoa/thường, trim đầu/cuối và
+gộp khoảng trắng thừa; không fuzzy match và không đoán sản phẩm tương tự.
+
+Checklist test Phase 1:
+
+1. Tìm title chỉ nằm trong tab đầu tiên.
+2. Tìm title chỉ nằm trong một tab khác.
+3. Tạo cùng title ở nhiều tab/dòng và xác nhận tất cả kết quả đều xuất hiện.
+4. Đổi chữ hoa/thường hoặc thêm khoảng trắng thừa và xác nhận vẫn tìm thấy.
+5. Nhập title không tồn tại và xác nhận hiển thị `NOT FOUND`.
 
 ## Thiết lập trang `/admin`
 

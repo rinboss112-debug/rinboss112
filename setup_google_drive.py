@@ -7,6 +7,7 @@ from pathlib import Path
 from google_auth_oauthlib.flow import InstalledAppFlow
 
 from cloud_storage import DRIVE_FILE_SCOPE
+from google_sheet_search import SHEETS_READONLY_SCOPE
 
 
 def _toml_string(value: str) -> str:
@@ -15,7 +16,7 @@ def _toml_string(value: str) -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Tạo cấu hình Google Drive OAuth cho Streamlit Secrets."
+        description="Tạo cấu hình Google Drive + Google Sheets OAuth cho Streamlit Secrets."
     )
     parser.add_argument(
         "--client-secrets",
@@ -41,7 +42,7 @@ def run_oauth_setup() -> int:
         raise SystemExit(f"Không tìm thấy file: {args.client_secrets}")
 
     flow = InstalledAppFlow.from_client_secrets_file(
-        str(args.client_secrets), scopes=[DRIVE_FILE_SCOPE]
+        str(args.client_secrets), scopes=[DRIVE_FILE_SCOPE, SHEETS_READONLY_SCOPE]
     )
     credentials = flow.run_local_server(
         port=0,
